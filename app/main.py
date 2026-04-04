@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.core.config import settings
@@ -19,6 +20,7 @@ app.add_middleware(
     allow_methods=["*"],            # GET/POST/PATCH/DELETE...
     allow_headers=["*"],            # Authorization, Content-Type и т.п.
 )
+
 
 @app.get("/health", tags=["health"])
 def health() -> dict[str, str]:
