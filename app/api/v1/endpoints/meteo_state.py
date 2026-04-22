@@ -32,9 +32,11 @@ def get_hourly_meteo_state(
     wind_sin_avg = func.avg(func.sin(wind_dir_rad))
     wind_cos_avg = func.avg(func.cos(wind_dir_rad))
     wind_vector_len = func.sqrt(func.power(wind_sin_avg, 2) + func.power(wind_cos_avg, 2))
+    wind_dir_deg = func.degrees(func.atan2(wind_sin_avg, wind_cos_avg))
     wind_dir_avg = case(
         (wind_vector_len < 1e-6, None),
-        else_=func.mod(func.degrees(func.atan2(wind_sin_avg, wind_cos_avg)) + 360.0, 360.0),
+        (wind_dir_deg < 0.0, wind_dir_deg + 360.0),
+        else_=wind_dir_deg,
     )
 
     rows = db.execute(
