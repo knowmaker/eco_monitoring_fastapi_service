@@ -71,7 +71,7 @@ Content-Type: application/json
 3. Получение устройств:
 
 ```http
-GET /api/v1/devices
+GET /api/v1/monitoring_posts
 ```
 
 Endpoint публичный, авторизация не требуется.
