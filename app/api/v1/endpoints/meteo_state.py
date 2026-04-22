@@ -2,7 +2,7 @@ from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import Date, Integer, cast, func, select
+from sqlalchemy import Date, Integer, cast, case, func, select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -28,6 +28,14 @@ def get_hourly_meteo_state(
     local_ts = func.timezone(APP_TIMEZONE, func.to_timestamp(MeteoState.device_timestamp_ms / 1000.0))
     hour_expr = cast(func.extract("hour", local_ts), Integer)
     date_expr = cast(local_ts, Date)
+    wind_dir_rad = func.radians(MeteoState.hor_win_dir)
+    wind_sin_avg = func.avg(func.sin(wind_dir_rad))
+    wind_cos_avg = func.avg(func.cos(wind_dir_rad))
+    wind_vector_len = func.sqrt(func.power(wind_sin_avg, 2) + func.power(wind_cos_avg, 2))
+    wind_dir_avg = case(
+        (wind_vector_len < 1e-6, None),
+        else_=func.mod(func.degrees(func.atan2(wind_sin_avg, wind_cos_avg)) + 360.0, 360.0),
+    )
 
     rows = db.execute(
         select(
@@ -35,7 +43,7 @@ def get_hourly_meteo_state(
             func.avg(MeteoState.atm_press).label("atm_press"),
             func.avg(MeteoState.air_temp).label("air_temp"),
             func.avg(MeteoState.air_hum).label("air_hum"),
-            func.avg(MeteoState.hor_win_dir).label("hor_win_dir"),
+            wind_dir_avg.label("hor_win_dir"),
             func.avg(MeteoState.hor_win_spd).label("hor_win_spd"),
         )
         .join(DeviceState, DeviceState.id == MeteoState.device_state_id)
