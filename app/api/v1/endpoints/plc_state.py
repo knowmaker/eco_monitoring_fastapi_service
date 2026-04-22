@@ -28,7 +28,6 @@ def get_latest_plc_state(
         plc_state=PlcStateLatestOut(
             id=row.id,
             monitoring_post_id=row.monitoring_post_id,
-            aggregation_period_min=row.aggregation_period_min,
             plc_timestamp_ms=row.plc_timestamp_ms,
             received_at=row.received_at.isoformat(),
         )
