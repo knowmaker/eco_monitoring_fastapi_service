@@ -3,8 +3,8 @@
 FastAPI сервис с:
 - регистрацией пользователя по email (пароль генерируется и отправляется на email),
 - авторизацией по email+паролю,
-- вечным JWT bearer-токеном (без `exp`),
-- endpoint для получения уникальных `serial` из `plc_state`.
+- JWT bearer-токеном,
+- endpoint-ами по таблицам `monitoring_posts`, `plc_state`, `device_state`.
 
 ## Подготовка
 
@@ -68,10 +68,23 @@ Content-Type: application/json
 }
 ```
 
-3. Получение устройств:
+3. Список постов мониторинга:
 
 ```http
 GET /api/v1/monitoring_posts
 ```
 
-Endpoint публичный, авторизация не требуется.
+4. Последнее PLC-состояние по `monitoring_post_id`:
+
+```http
+GET /api/v1/plc_state/latest?monitoring_post_id=<id>
+```
+
+5. Доступные устройства по `monitoring_post_id`:
+- тип включается в ответ, только если в истории есть хотя бы одно состояние, где `ping != 'BAD'` (или `NULL`).
+
+```http
+GET /api/v1/device_state/available?monitoring_post_id=<id>
+```
+
+Endpoint-ы публичные, авторизация не требуется.
