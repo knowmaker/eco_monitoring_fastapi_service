@@ -6,9 +6,7 @@ from sqlalchemy import Date, Integer, cast, func, select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.models.device_state import DeviceState
-from app.models.ivtm_state import IvtmState
-from app.models.plc_state import PlcState
+from app.models.cagg_ivtm_hourly import CaggIvtmHourly
 from app.schemas.ivtm_state import IvtmStateHourlyResponse, IvtmStateHourPoint, IvtmStateMetricSeriesOut
 
 
@@ -25,24 +23,20 @@ def get_hourly_ivtm_state(
 ) -> IvtmStateHourlyResponse:
     day = target_date or datetime.now(ZoneInfo(APP_TIMEZONE)).date()
 
-    local_ts = func.timezone(APP_TIMEZONE, func.to_timestamp(IvtmState.device_timestamp_ms / 1000.0))
+    local_ts = func.timezone(APP_TIMEZONE, func.to_timestamp(CaggIvtmHourly.bucket_ms / 1000.0))
     hour_expr = cast(func.extract("hour", local_ts), Integer)
     date_expr = cast(local_ts, Date)
 
     rows = db.execute(
         select(
             hour_expr.label("hour"),
-            func.avg(IvtmState.sensor_ivtm_hum).label("sensor_ivtm_hum"),
-            func.avg(IvtmState.sensor_ivtm_temp).label("sensor_ivtm_temp"),
+            CaggIvtmHourly.sensor_ivtm_hum_avg.label("sensor_ivtm_hum"),
+            CaggIvtmHourly.sensor_ivtm_temp_avg.label("sensor_ivtm_temp"),
         )
-        .join(DeviceState, DeviceState.id == IvtmState.device_state_id)
-        .join(PlcState, PlcState.id == DeviceState.plc_state_id)
         .where(
-            PlcState.monitoring_post_id == monitoring_post_id,
-            DeviceState.device_type == "ivtm",
+            CaggIvtmHourly.monitoring_post_id == monitoring_post_id,
             date_expr == day,
         )
-        .group_by(hour_expr)
         .order_by(hour_expr.asc())
     ).all()
 

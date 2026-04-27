@@ -2,13 +2,11 @@ from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import Date, Integer, cast, case, func, select
+from sqlalchemy import Date, Integer, cast, func, select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.models.device_state import DeviceState
-from app.models.meteo_state import MeteoState
-from app.models.plc_state import PlcState
+from app.models.cagg_meteo_hourly import CaggMeteoHourly
 from app.schemas.meteo_state import MeteoStateHourlyResponse, MeteoStateHourPoint, MeteoStateMetricSeriesOut
 
 
@@ -25,37 +23,23 @@ def get_hourly_meteo_state(
 ) -> MeteoStateHourlyResponse:
     day = target_date or datetime.now(ZoneInfo(APP_TIMEZONE)).date()
 
-    local_ts = func.timezone(APP_TIMEZONE, func.to_timestamp(MeteoState.device_timestamp_ms / 1000.0))
+    local_ts = func.timezone(APP_TIMEZONE, func.to_timestamp(CaggMeteoHourly.bucket_ms / 1000.0))
     hour_expr = cast(func.extract("hour", local_ts), Integer)
     date_expr = cast(local_ts, Date)
-    wind_dir_rad = func.radians(MeteoState.hor_win_dir)
-    wind_sin_avg = func.avg(func.sin(wind_dir_rad))
-    wind_cos_avg = func.avg(func.cos(wind_dir_rad))
-    wind_vector_len = func.sqrt(func.power(wind_sin_avg, 2) + func.power(wind_cos_avg, 2))
-    wind_dir_deg = func.degrees(func.atan2(wind_sin_avg, wind_cos_avg))
-    wind_dir_avg = case(
-        (wind_vector_len < 1e-6, None),
-        (wind_dir_deg < 0.0, wind_dir_deg + 360.0),
-        else_=wind_dir_deg,
-    )
 
     rows = db.execute(
         select(
             hour_expr.label("hour"),
-            func.avg(MeteoState.atm_press).label("atm_press"),
-            func.avg(MeteoState.air_temp).label("air_temp"),
-            func.avg(MeteoState.air_hum).label("air_hum"),
-            wind_dir_avg.label("hor_win_dir"),
-            func.avg(MeteoState.hor_win_spd).label("hor_win_spd"),
+            CaggMeteoHourly.atm_press_avg.label("atm_press"),
+            CaggMeteoHourly.air_temp_avg.label("air_temp"),
+            CaggMeteoHourly.air_hum_avg.label("air_hum"),
+            CaggMeteoHourly.hor_win_dir_avg.label("hor_win_dir"),
+            CaggMeteoHourly.hor_win_spd_avg.label("hor_win_spd"),
         )
-        .join(DeviceState, DeviceState.id == MeteoState.device_state_id)
-        .join(PlcState, PlcState.id == DeviceState.plc_state_id)
         .where(
-            PlcState.monitoring_post_id == monitoring_post_id,
-            DeviceState.device_type == "meteo",
+            CaggMeteoHourly.monitoring_post_id == monitoring_post_id,
             date_expr == day,
         )
-        .group_by(hour_expr)
         .order_by(hour_expr.asc())
     ).all()
 

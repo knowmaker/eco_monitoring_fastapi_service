@@ -6,9 +6,7 @@ from sqlalchemy import Date, Integer, cast, func, select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.models.device_state import DeviceState
-from app.models.dust_state import DustState
-from app.models.plc_state import PlcState
+from app.models.cagg_dust_hourly import CaggDustHourly
 from app.schemas.dust_state import DustStateHourlyResponse, DustStateHourPoint, DustStateMetricSeriesOut
 
 
@@ -25,28 +23,24 @@ def get_hourly_dust_state(
 ) -> DustStateHourlyResponse:
     day = target_date or datetime.now(ZoneInfo(APP_TIMEZONE)).date()
 
-    local_ts = func.timezone(APP_TIMEZONE, func.to_timestamp(DustState.device_timestamp_ms / 1000.0))
+    local_ts = func.timezone(APP_TIMEZONE, func.to_timestamp(CaggDustHourly.bucket_ms / 1000.0))
     hour_expr = cast(func.extract("hour", local_ts), Integer)
     date_expr = cast(local_ts, Date)
 
     rows = db.execute(
         select(
             hour_expr.label("hour"),
-            func.avg(DustState.humidity).label("humidity"),
-            func.avg(DustState.temp).label("temp"),
-            func.avg(DustState.pm1_concentration).label("pm1_concentration"),
-            func.avg(DustState.pm2_concentration).label("pm2_concentration"),
-            func.avg(DustState.pm10_concentration).label("pm10_concentration"),
-            func.avg(DustState.tsp_concentration).label("tsp_concentration"),
+            CaggDustHourly.humidity_avg.label("humidity"),
+            CaggDustHourly.temp_avg.label("temp"),
+            CaggDustHourly.pm1_avg.label("pm1_concentration"),
+            CaggDustHourly.pm2_avg.label("pm2_concentration"),
+            CaggDustHourly.pm10_avg.label("pm10_concentration"),
+            CaggDustHourly.tsp_avg.label("tsp_concentration"),
         )
-        .join(DeviceState, DeviceState.id == DustState.device_state_id)
-        .join(PlcState, PlcState.id == DeviceState.plc_state_id)
         .where(
-            PlcState.monitoring_post_id == monitoring_post_id,
-            DeviceState.device_type == "dust",
+            CaggDustHourly.monitoring_post_id == monitoring_post_id,
             date_expr == day,
         )
-        .group_by(hour_expr)
         .order_by(hour_expr.asc())
     ).all()
 

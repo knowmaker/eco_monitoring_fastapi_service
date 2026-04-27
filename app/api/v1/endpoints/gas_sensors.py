@@ -6,9 +6,7 @@ from sqlalchemy import Date, Integer, cast, func, select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.models.device_state import DeviceState
-from app.models.gas_sensors import GasSensors
-from app.models.plc_state import PlcState
+from app.models.cagg_gas_hourly import CaggGasHourly
 from app.schemas.gas_sensors import GasSensorsHourPoint, GasSensorsHourlyResponse, GasSensorsSubstanceSeriesOut
 
 
@@ -25,26 +23,21 @@ def get_hourly_gas_sensors(
 ) -> GasSensorsHourlyResponse:
     day = target_date or datetime.now(ZoneInfo(APP_TIMEZONE)).date()
 
-    local_ts = func.timezone(APP_TIMEZONE, func.to_timestamp(GasSensors.device_timestamp_ms / 1000.0))
+    local_ts = func.timezone(APP_TIMEZONE, func.to_timestamp(CaggGasHourly.bucket_ms / 1000.0))
     hour_expr = cast(func.extract("hour", local_ts), Integer)
     date_expr = cast(local_ts, Date)
-    substance_expr = func.coalesce(GasSensors.substance_code, "UNKNOWN")
 
     rows = db.execute(
         select(
-            substance_expr.label("substance_code"),
+            CaggGasHourly.substance_code.label("substance_code"),
             hour_expr.label("hour"),
-            func.avg(GasSensors.value).label("value"),
+            CaggGasHourly.value_avg.label("value"),
         )
-        .join(DeviceState, DeviceState.id == GasSensors.device_state_id)
-        .join(PlcState, PlcState.id == DeviceState.plc_state_id)
         .where(
-            PlcState.monitoring_post_id == monitoring_post_id,
-            DeviceState.device_type == "gas",
+            CaggGasHourly.monitoring_post_id == monitoring_post_id,
             date_expr == day,
         )
-        .group_by(substance_expr, hour_expr)
-        .order_by(substance_expr.asc(), hour_expr.asc())
+        .order_by(CaggGasHourly.substance_code.asc(), hour_expr.asc())
     ).all()
 
     values_by_substance: dict[str, dict[int, float | None]] = {}
