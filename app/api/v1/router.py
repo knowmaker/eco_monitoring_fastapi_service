@@ -8,13 +8,11 @@ from app.api.v1.endpoints.gas_state import router as gas_state_router
 from app.api.v1.endpoints.ivtm_state import router as ivtm_state_router
 from app.api.v1.endpoints.meteo_state import router as meteo_state_router
 from app.api.v1.endpoints.monitoring_posts import router as monitoring_posts_router
-from app.api.v1.endpoints.plc_state import router as plc_state_router
 
 
 api_router = APIRouter()
 api_router.include_router(auth_router)
 api_router.include_router(monitoring_posts_router)
-api_router.include_router(plc_state_router)
 api_router.include_router(device_state_router)
 api_router.include_router(gas_state_router)
 api_router.include_router(gas_sensors_router)

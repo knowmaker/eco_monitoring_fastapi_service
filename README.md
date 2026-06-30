@@ -1,10 +1,10 @@
 # Eco Monitoring FastAPI Service
 
-FastAPI сервис с:
-- регистрацией пользователя по email (пароль генерируется и отправляется на email),
-- авторизацией по email+паролю,
-- JWT bearer-токеном,
-- endpoint-ами по таблицам `monitoring_posts`, `plc_state`, `device_state`.
+FastAPI-сервис для:
+- регистрации пользователя по email;
+- авторизации по email и паролю;
+- выдачи JWT bearer-токена;
+- получения постов мониторинга, доступных устройств и часовых рядов датчиков.
 
 ## Подготовка
 
@@ -16,14 +16,17 @@ pip install -r requirements.txt
 ```
 
 Заполните `.env`:
-- `DATABASE_URL`
-- `JWT_SECRET`
-- `JWT_ALGORITHM` (обычно `HS256`)
-- `SMTP_HOST`
-- `SMTP_PORT`
-- `SMTP_USERNAME`
-- `SMTP_PASSWORD`
-- `SMTP_USE_TLS`
+
+```text
+DATABASE_URL=
+JWT_SECRET=
+JWT_ALGORITHM=HS256
+SMTP_HOST=
+SMTP_PORT=
+SMTP_USERNAME=
+SMTP_PASSWORD=
+SMTP_USE_TLS=
+```
 
 ## Запуск
 
@@ -32,11 +35,14 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 Swagger:
-- `http://127.0.0.1:8000/docs`
+
+```text
+http://127.0.0.1:8000/docs
+```
 
 ## API
 
-1. Регистрация:
+### Регистрация
 
 ```http
 POST /api/v1/auth/register
@@ -47,7 +53,7 @@ Content-Type: application/json
 }
 ```
 
-2. Логин:
+### Логин
 
 ```http
 POST /api/v1/auth/login
@@ -55,7 +61,7 @@ Content-Type: application/json
 
 {
   "email": "user@example.com",
-  "password": "пароль_из_email"
+  "password": "password_from_email"
 }
 ```
 
@@ -68,23 +74,48 @@ Content-Type: application/json
 }
 ```
 
-3. Список постов мониторинга:
+### Посты мониторинга
 
 ```http
 GET /api/v1/monitoring_posts
 ```
 
-4. Последнее PLC-состояние по `monitoring_post_id`:
-
-```http
-GET /api/v1/plc_state/latest?monitoring_post_id=<id>
-```
-
-5. Доступные устройства по `monitoring_post_id`:
-- тип включается в ответ, только если в истории есть хотя бы одно состояние, где `ping != 'BAD'` (или `NULL`).
+### Доступные устройства поста
 
 ```http
 GET /api/v1/device_state/available?monitoring_post_id=<id>
 ```
 
-Endpoint-ы публичные, авторизация не требуется.
+В ответ попадают только устройства, у которых в истории есть хотя бы одно состояние с `ping != 'BAD'` или `ping IS NULL`.
+
+### Часовые данные газа
+
+```http
+GET /api/v1/gas_sensors/hourly?monitoring_post_id=<id>&date=YYYY-MM-DD
+```
+
+### Последнее состояние газового устройства
+
+```http
+GET /api/v1/gas_state/latest?monitoring_post_id=<id>
+```
+
+### Часовые данные пыли
+
+```http
+GET /api/v1/dust_state/hourly?monitoring_post_id=<id>&date=YYYY-MM-DD
+```
+
+### Часовые данные метео
+
+```http
+GET /api/v1/meteo_state/hourly?monitoring_post_id=<id>&date=YYYY-MM-DD
+```
+
+### Часовые данные ИВТМ
+
+```http
+GET /api/v1/ivtm_state/hourly?monitoring_post_id=<id>&date=YYYY-MM-DD
+```
+
+Публичные endpoint-ы авторизацию не требуют.
