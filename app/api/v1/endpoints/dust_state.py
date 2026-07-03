@@ -30,8 +30,6 @@ def get_hourly_dust_state(
     rows = db.execute(
         select(
             hour_expr.label("hour"),
-            CaggDustHourly.humidity_avg.label("humidity"),
-            CaggDustHourly.temp_avg.label("temp"),
             CaggDustHourly.pm1_avg.label("pm1_concentration"),
             CaggDustHourly.pm2_avg.label("pm2_concentration"),
             CaggDustHourly.pm10_avg.label("pm10_concentration"),
@@ -47,8 +45,6 @@ def get_hourly_dust_state(
     by_hour: dict[int, dict[str, float | None]] = {}
     for row in rows:
         by_hour[int(row.hour)] = {
-            "humidity": float(row.humidity) if row.humidity is not None else None,
-            "temp": float(row.temp) if row.temp is not None else None,
             "pm1_concentration": float(row.pm1_concentration) if row.pm1_concentration is not None else None,
             "pm2_concentration": float(row.pm2_concentration) if row.pm2_concentration is not None else None,
             "pm10_concentration": float(row.pm10_concentration) if row.pm10_concentration is not None else None,
@@ -56,8 +52,6 @@ def get_hourly_dust_state(
         }
 
     metric_labels = [
-        ("humidity", "Humidity"),
-        ("temp", "Temperature"),
         ("pm1_concentration", "PM1"),
         ("pm2_concentration", "PM2.5"),
         ("pm10_concentration", "PM10"),
