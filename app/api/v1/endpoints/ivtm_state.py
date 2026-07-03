@@ -47,13 +47,13 @@ def get_hourly_ivtm_state(
             "sensor_ivtm_temp": float(row.sensor_ivtm_temp) if row.sensor_ivtm_temp is not None else None,
         }
 
-    metric_labels = [
-        ("sensor_ivtm_hum", "IVTM Humidity"),
-        ("sensor_ivtm_temp", "IVTM Temperature"),
+    metric_keys = [
+        "sensor_ivtm_hum",
+        "sensor_ivtm_temp",
     ]
     series = []
-    for key, label in metric_labels:
+    for key in metric_keys:
         points = [IvtmStateHourPoint(hour=h, value=by_hour.get(h, {}).get(key)) for h in range(24)]
-        series.append(IvtmStateMetricSeriesOut(key=key, label=label, points=points))
+        series.append(IvtmStateMetricSeriesOut(key=key, points=points))
 
     return IvtmStateHourlyResponse(date=day.isoformat(), series=series)

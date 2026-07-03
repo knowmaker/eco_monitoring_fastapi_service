@@ -8,7 +8,6 @@ class DustStateHourPoint(BaseModel):
 
 class DustStateMetricSeriesOut(BaseModel):
     key: str
-    label: str
     points: list[DustStateHourPoint]
 
 

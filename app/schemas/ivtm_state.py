@@ -8,7 +8,6 @@ class IvtmStateHourPoint(BaseModel):
 
 class IvtmStateMetricSeriesOut(BaseModel):
     key: str
-    label: str
     points: list[IvtmStateHourPoint]
 
 

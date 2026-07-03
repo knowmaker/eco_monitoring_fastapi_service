@@ -53,16 +53,16 @@ def get_hourly_meteo_state(
             "hor_win_spd": float(row.hor_win_spd) if row.hor_win_spd is not None else None,
         }
 
-    metric_labels = [
-        ("atm_press", "Pressure"),
-        ("air_temp", "Air Temperature"),
-        ("air_hum", "Air Humidity"),
-        ("hor_win_dir", "Wind Direction"),
-        ("hor_win_spd", "Wind Speed"),
+    metric_keys = [
+        "atm_press",
+        "air_temp",
+        "air_hum",
+        "hor_win_dir",
+        "hor_win_spd",
     ]
     series = []
-    for key, label in metric_labels:
+    for key in metric_keys:
         points = [MeteoStateHourPoint(hour=h, value=by_hour.get(h, {}).get(key)) for h in range(24)]
-        series.append(MeteoStateMetricSeriesOut(key=key, label=label, points=points))
+        series.append(MeteoStateMetricSeriesOut(key=key, points=points))
 
     return MeteoStateHourlyResponse(date=day.isoformat(), series=series)

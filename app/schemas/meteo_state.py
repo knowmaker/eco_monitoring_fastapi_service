@@ -8,7 +8,6 @@ class MeteoStateHourPoint(BaseModel):
 
 class MeteoStateMetricSeriesOut(BaseModel):
     key: str
-    label: str
     points: list[MeteoStateHourPoint]
 
 

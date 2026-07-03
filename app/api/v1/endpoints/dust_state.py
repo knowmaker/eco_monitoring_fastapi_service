@@ -51,15 +51,15 @@ def get_hourly_dust_state(
             "tsp_concentration": float(row.tsp_concentration) if row.tsp_concentration is not None else None,
         }
 
-    metric_labels = [
-        ("pm1_concentration", "PM1"),
-        ("pm2_concentration", "PM2.5"),
-        ("pm10_concentration", "PM10"),
-        ("tsp_concentration", "TSP"),
+    metric_keys = [
+        "pm1_concentration",
+        "pm2_concentration",
+        "pm10_concentration",
+        "tsp_concentration",
     ]
     series = []
-    for key, label in metric_labels:
+    for key in metric_keys:
         points = [DustStateHourPoint(hour=h, value=by_hour.get(h, {}).get(key)) for h in range(24)]
-        series.append(DustStateMetricSeriesOut(key=key, label=label, points=points))
+        series.append(DustStateMetricSeriesOut(key=key, points=points))
 
     return DustStateHourlyResponse(date=day.isoformat(), series=series)
