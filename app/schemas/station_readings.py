@@ -1,9 +1,19 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+
+class PollutantLimitOut(BaseModel):
+    pollutant_code: str
+    pdk_max_once: float | None
+    pdk_daily: float | None
+    pdk_annual: float | None
+    comparison_pdk: float | None
+    comparison_kind: str
 
 
 class LatestGasSubstanceOut(BaseModel):
     substance_code: str
     value: float | None
+    limit: PollutantLimitOut | None = None
 
 
 class LatestGasHourlyOut(BaseModel):
@@ -15,6 +25,7 @@ class LatestDustHourlyOut(BaseModel):
     pm2: float | None
     pm10: float | None
     tsp: float | None
+    limits: dict[str, PollutantLimitOut | None] = Field(default_factory=dict)
 
 
 class LatestMeteoHourlyOut(BaseModel):

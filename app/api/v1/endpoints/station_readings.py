@@ -7,12 +7,14 @@ from app.models.cagg_dust_hourly import CaggDustHourly
 from app.models.cagg_gas_hourly import CaggGasHourly
 from app.models.cagg_ivtm_hourly import CaggIvtmHourly
 from app.models.cagg_meteo_hourly import CaggMeteoHourly
+from app.models.pollutant_limit import PollutantLimit
 from app.schemas.station_readings import (
     LatestDustHourlyOut,
     LatestGasHourlyOut,
     LatestGasSubstanceOut,
     LatestIvtmHourlyOut,
     LatestMeteoHourlyOut,
+    PollutantLimitOut,
     StationLatestHourlyResponse,
 )
 
@@ -24,11 +26,27 @@ def to_float(value: object) -> float | None:
     return float(value) if value is not None else None
 
 
+def to_limit_out(limit: PollutantLimit | None) -> PollutantLimitOut | None:
+    if limit is None:
+        return None
+    return PollutantLimitOut(
+        pollutant_code=limit.pollutant_code,
+        pdk_max_once=to_float(limit.pdk_max_once),
+        pdk_daily=to_float(limit.pdk_daily),
+        pdk_annual=to_float(limit.pdk_annual),
+        comparison_pdk=to_float(limit.pdk_max_once),
+        comparison_kind="max_once",
+    )
+
+
 @router.get("/latest_hourly", response_model=StationLatestHourlyResponse)
 def get_station_latest_hourly_readings(
     monitoring_post_id: int = Query(..., ge=1),
     db: Session = Depends(get_db),
 ) -> StationLatestHourlyResponse:
+    limit_rows = db.execute(select(PollutantLimit)).scalars().all()
+    limits_by_code = {row.pollutant_code.upper(): row for row in limit_rows}
+
     bucket_candidates = [
         db.scalar(select(func.max(CaggGasHourly.bucket_ms)).where(CaggGasHourly.monitoring_post_id == monitoring_post_id)),
         db.scalar(select(func.max(CaggDustHourly.bucket_ms)).where(CaggDustHourly.monitoring_post_id == monitoring_post_id)),
@@ -58,7 +76,11 @@ def get_station_latest_hourly_readings(
     gas = (
         LatestGasHourlyOut(
             substances=[
-                LatestGasSubstanceOut(substance_code=row.substance_code, value=to_float(row.value_avg))
+                LatestGasSubstanceOut(
+                    substance_code=row.substance_code,
+                    value=to_float(row.value_avg),
+                    limit=to_limit_out(limits_by_code.get(row.substance_code.upper())),
+                )
                 for row in gas_rows
             ]
         )
@@ -78,6 +100,12 @@ def get_station_latest_hourly_readings(
             pm2=to_float(dust_row.pm2_avg),
             pm10=to_float(dust_row.pm10_avg),
             tsp=to_float(dust_row.tsp_avg),
+            limits={
+                "pm1": to_limit_out(limits_by_code.get("PM1")),
+                "pm2": to_limit_out(limits_by_code.get("PM2.5")),
+                "pm10": to_limit_out(limits_by_code.get("PM10")),
+                "tsp": to_limit_out(limits_by_code.get("TSP")),
+            },
         )
         if dust_row
         else None
