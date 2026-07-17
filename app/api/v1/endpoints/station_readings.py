@@ -74,8 +74,6 @@ def get_station_latest_hourly_readings(
     )
     dust = (
         LatestDustHourlyOut(
-            humidity=to_float(dust_row.humidity_avg),
-            temp=to_float(dust_row.temp_avg),
             pm1=to_float(dust_row.pm1_avg),
             pm2=to_float(dust_row.pm2_avg),
             pm10=to_float(dust_row.pm10_avg),

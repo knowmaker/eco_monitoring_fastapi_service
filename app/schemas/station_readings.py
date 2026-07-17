@@ -11,8 +11,6 @@ class LatestGasHourlyOut(BaseModel):
 
 
 class LatestDustHourlyOut(BaseModel):
-    humidity: float | None
-    temp: float | None
     pm1: float | None
     pm2: float | None
     pm10: float | None
