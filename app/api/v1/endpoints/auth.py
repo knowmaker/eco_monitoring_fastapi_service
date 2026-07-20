@@ -51,4 +51,4 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginResponse
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Неверный email или пароль.")
 
     token = generate_jwt_token(user_id=user.id, email=user.email)
-    return LoginResponse(access_token=token)
+    return LoginResponse(access_token=token, is_admin=user.is_admin)

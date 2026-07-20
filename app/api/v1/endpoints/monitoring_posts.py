@@ -2,7 +2,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_admin_user
 from app.db.session import get_db
 from app.models.monitoring_posts import MonitoringPost
 from app.models.user import User
@@ -64,7 +64,7 @@ def get_monitoring_posts(
 @router.get("/admin", response_model=MonitoringPostsResponse)
 def get_monitoring_posts_admin(
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    _current_user: User = Depends(get_current_admin_user),
 ) -> MonitoringPostsResponse:
     rows = db.scalars(select(MonitoringPost).order_by(MonitoringPost.serial.asc())).all()
     monitoring_posts = [to_post_out(row) for row in rows]
@@ -76,7 +76,7 @@ def update_monitoring_post(
     monitoring_post_id: int,
     payload: MonitoringPostUpdate,
     db: Session = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    _current_user: User = Depends(get_current_admin_user),
 ) -> MonitoringPostOut:
     post = db.get(MonitoringPost, monitoring_post_id)
     if post is None:
