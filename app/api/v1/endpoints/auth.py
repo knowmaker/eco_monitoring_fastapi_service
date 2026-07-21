@@ -2,10 +2,18 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_user
 from app.core.security import generate_jwt_token, generate_plain_password, hash_password, verify_password
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.auth import LoginRequest, LoginResponse, RegisterRequest, RegisterResponse
+from app.schemas.auth import (
+    LoginRequest,
+    LoginResponse,
+    RegisterRequest,
+    RegisterResponse,
+    UserProfileResponse,
+    UserProfileUpdate,
+)
 from app.services.email_service import send_registration_password
 
 
@@ -52,3 +60,36 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginResponse
 
     token = generate_jwt_token(user_id=user.id, email=user.email)
     return LoginResponse(access_token=token, is_admin=user.is_admin)
+
+
+def to_profile_response(user: User) -> UserProfileResponse:
+    return UserProfileResponse(
+        email=user.email,
+        last_name=user.last_name,
+        first_name=user.first_name,
+        middle_name=user.middle_name,
+    )
+
+
+@router.get("/me", response_model=UserProfileResponse)
+def get_profile(current_user: User = Depends(get_current_user)) -> UserProfileResponse:
+    return to_profile_response(current_user)
+
+
+@router.patch("/me", response_model=UserProfileResponse)
+def update_profile(
+    payload: UserProfileUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> UserProfileResponse:
+    changes = payload.model_dump(exclude_unset=True)
+    if "last_name" in changes:
+        current_user.last_name = changes["last_name"].strip() if changes["last_name"] else None
+    if "first_name" in changes:
+        current_user.first_name = changes["first_name"].strip() if changes["first_name"] else None
+    if "middle_name" in changes:
+        current_user.middle_name = changes["middle_name"].strip() if changes["middle_name"] else None
+
+    db.commit()
+    db.refresh(current_user)
+    return to_profile_response(current_user)
