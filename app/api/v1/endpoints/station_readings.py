@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -39,8 +39,11 @@ def to_limit_out(limit: PollutantLimit | None) -> PollutantLimitOut | None:
     )
 
 
-def get_latest_bucket_ms(db: Session, model: type, monitoring_post_id: int) -> int | None:
-    return db.scalar(select(func.max(model.bucket_ms)).where(model.monitoring_post_id == monitoring_post_id))
+def get_latest_bucket_ms(db: Session, model: type, monitoring_post_id: int, *value_columns: object) -> int | None:
+    conditions = [model.monitoring_post_id == monitoring_post_id]
+    if value_columns:
+        conditions.append(or_(*(column.is_not(None) for column in value_columns)))
+    return db.scalar(select(func.max(model.bucket_ms)).where(*conditions))
 
 
 @router.get("/latest_hourly", response_model=StationLatestHourlyResponse)
@@ -51,10 +54,33 @@ def get_station_latest_hourly_readings(
     limit_rows = db.execute(select(PollutantLimit)).scalars().all()
     limits_by_code = {row.pollutant_code.upper(): row for row in limit_rows}
 
-    gas_bucket_ms = get_latest_bucket_ms(db, CaggGasHourly, monitoring_post_id)
-    dust_bucket_ms = get_latest_bucket_ms(db, CaggDustHourly, monitoring_post_id)
-    meteo_bucket_ms = get_latest_bucket_ms(db, CaggMeteoHourly, monitoring_post_id)
-    ivtm_bucket_ms = get_latest_bucket_ms(db, CaggIvtmHourly, monitoring_post_id)
+    gas_bucket_ms = get_latest_bucket_ms(db, CaggGasHourly, monitoring_post_id, CaggGasHourly.value_avg)
+    dust_bucket_ms = get_latest_bucket_ms(
+        db,
+        CaggDustHourly,
+        monitoring_post_id,
+        CaggDustHourly.pm1_avg,
+        CaggDustHourly.pm2_avg,
+        CaggDustHourly.pm10_avg,
+        CaggDustHourly.tsp_avg,
+    )
+    meteo_bucket_ms = get_latest_bucket_ms(
+        db,
+        CaggMeteoHourly,
+        monitoring_post_id,
+        CaggMeteoHourly.atm_press_avg,
+        CaggMeteoHourly.air_temp_avg,
+        CaggMeteoHourly.air_hum_avg,
+        CaggMeteoHourly.hor_win_dir_avg,
+        CaggMeteoHourly.hor_win_spd_avg,
+    )
+    ivtm_bucket_ms = get_latest_bucket_ms(
+        db,
+        CaggIvtmHourly,
+        monitoring_post_id,
+        CaggIvtmHourly.sensor_ivtm_hum_avg,
+        CaggIvtmHourly.sensor_ivtm_temp_avg,
+    )
     bucket_candidates = [gas_bucket_ms, dust_bucket_ms, meteo_bucket_ms, ivtm_bucket_ms]
     latest_bucket_ms = max((bucket for bucket in bucket_candidates if bucket is not None), default=None)
 
@@ -74,6 +100,7 @@ def get_station_latest_hourly_readings(
             .where(
                 CaggGasHourly.monitoring_post_id == monitoring_post_id,
                 CaggGasHourly.bucket_ms == gas_bucket_ms,
+                CaggGasHourly.value_avg.is_not(None),
             )
             .order_by(CaggGasHourly.substance_code.asc())
         ).scalars().all()
