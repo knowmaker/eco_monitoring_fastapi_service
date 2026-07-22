@@ -39,6 +39,10 @@ def to_limit_out(limit: PollutantLimit | None) -> PollutantLimitOut | None:
     )
 
 
+def get_latest_bucket_ms(db: Session, model: type, monitoring_post_id: int) -> int | None:
+    return db.scalar(select(func.max(model.bucket_ms)).where(model.monitoring_post_id == monitoring_post_id))
+
+
 @router.get("/latest_hourly", response_model=StationLatestHourlyResponse)
 def get_station_latest_hourly_readings(
     monitoring_post_id: int = Query(..., ge=1),
@@ -47,12 +51,11 @@ def get_station_latest_hourly_readings(
     limit_rows = db.execute(select(PollutantLimit)).scalars().all()
     limits_by_code = {row.pollutant_code.upper(): row for row in limit_rows}
 
-    bucket_candidates = [
-        db.scalar(select(func.max(CaggGasHourly.bucket_ms)).where(CaggGasHourly.monitoring_post_id == monitoring_post_id)),
-        db.scalar(select(func.max(CaggDustHourly.bucket_ms)).where(CaggDustHourly.monitoring_post_id == monitoring_post_id)),
-        db.scalar(select(func.max(CaggMeteoHourly.bucket_ms)).where(CaggMeteoHourly.monitoring_post_id == monitoring_post_id)),
-        db.scalar(select(func.max(CaggIvtmHourly.bucket_ms)).where(CaggIvtmHourly.monitoring_post_id == monitoring_post_id)),
-    ]
+    gas_bucket_ms = get_latest_bucket_ms(db, CaggGasHourly, monitoring_post_id)
+    dust_bucket_ms = get_latest_bucket_ms(db, CaggDustHourly, monitoring_post_id)
+    meteo_bucket_ms = get_latest_bucket_ms(db, CaggMeteoHourly, monitoring_post_id)
+    ivtm_bucket_ms = get_latest_bucket_ms(db, CaggIvtmHourly, monitoring_post_id)
+    bucket_candidates = [gas_bucket_ms, dust_bucket_ms, meteo_bucket_ms, ivtm_bucket_ms]
     latest_bucket_ms = max((bucket for bucket in bucket_candidates if bucket is not None), default=None)
 
     if latest_bucket_ms is None:
@@ -65,16 +68,21 @@ def get_station_latest_hourly_readings(
             ivtm=None,
         )
 
-    gas_rows = db.execute(
-        select(CaggGasHourly)
-        .where(
-            CaggGasHourly.monitoring_post_id == monitoring_post_id,
-            CaggGasHourly.bucket_ms == latest_bucket_ms,
-        )
-        .order_by(CaggGasHourly.substance_code.asc())
-    ).scalars().all()
+    gas_rows = (
+        db.execute(
+            select(CaggGasHourly)
+            .where(
+                CaggGasHourly.monitoring_post_id == monitoring_post_id,
+                CaggGasHourly.bucket_ms == gas_bucket_ms,
+            )
+            .order_by(CaggGasHourly.substance_code.asc())
+        ).scalars().all()
+        if gas_bucket_ms is not None
+        else []
+    )
     gas = (
         LatestGasHourlyOut(
+            bucket_ms=gas_bucket_ms,
             substances=[
                 LatestGasSubstanceOut(
                     substance_code=row.substance_code,
@@ -88,14 +96,19 @@ def get_station_latest_hourly_readings(
         else None
     )
 
-    dust_row = db.scalar(
-        select(CaggDustHourly).where(
-            CaggDustHourly.monitoring_post_id == monitoring_post_id,
-            CaggDustHourly.bucket_ms == latest_bucket_ms,
+    dust_row = (
+        db.scalar(
+            select(CaggDustHourly).where(
+                CaggDustHourly.monitoring_post_id == monitoring_post_id,
+                CaggDustHourly.bucket_ms == dust_bucket_ms,
+            )
         )
+        if dust_bucket_ms is not None
+        else None
     )
     dust = (
         LatestDustHourlyOut(
+            bucket_ms=dust_bucket_ms,
             pm1=to_float(dust_row.pm1_avg),
             pm2=to_float(dust_row.pm2_avg),
             pm10=to_float(dust_row.pm10_avg),
@@ -111,14 +124,19 @@ def get_station_latest_hourly_readings(
         else None
     )
 
-    meteo_row = db.scalar(
-        select(CaggMeteoHourly).where(
-            CaggMeteoHourly.monitoring_post_id == monitoring_post_id,
-            CaggMeteoHourly.bucket_ms == latest_bucket_ms,
+    meteo_row = (
+        db.scalar(
+            select(CaggMeteoHourly).where(
+                CaggMeteoHourly.monitoring_post_id == monitoring_post_id,
+                CaggMeteoHourly.bucket_ms == meteo_bucket_ms,
+            )
         )
+        if meteo_bucket_ms is not None
+        else None
     )
     meteo = (
         LatestMeteoHourlyOut(
+            bucket_ms=meteo_bucket_ms,
             atm_press=to_float(meteo_row.atm_press_avg),
             air_temp=to_float(meteo_row.air_temp_avg),
             air_hum=to_float(meteo_row.air_hum_avg),
@@ -129,14 +147,19 @@ def get_station_latest_hourly_readings(
         else None
     )
 
-    ivtm_row = db.scalar(
-        select(CaggIvtmHourly).where(
-            CaggIvtmHourly.monitoring_post_id == monitoring_post_id,
-            CaggIvtmHourly.bucket_ms == latest_bucket_ms,
+    ivtm_row = (
+        db.scalar(
+            select(CaggIvtmHourly).where(
+                CaggIvtmHourly.monitoring_post_id == monitoring_post_id,
+                CaggIvtmHourly.bucket_ms == ivtm_bucket_ms,
+            )
         )
+        if ivtm_bucket_ms is not None
+        else None
     )
     ivtm = (
         LatestIvtmHourlyOut(
+            bucket_ms=ivtm_bucket_ms,
             sensor_ivtm_hum=to_float(ivtm_row.sensor_ivtm_hum_avg),
             sensor_ivtm_temp=to_float(ivtm_row.sensor_ivtm_temp_avg),
         )

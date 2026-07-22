@@ -17,10 +17,12 @@ class LatestGasSubstanceOut(BaseModel):
 
 
 class LatestGasHourlyOut(BaseModel):
+    bucket_ms: int
     substances: list[LatestGasSubstanceOut]
 
 
 class LatestDustHourlyOut(BaseModel):
+    bucket_ms: int
     pm1: float | None
     pm2: float | None
     pm10: float | None
@@ -29,6 +31,7 @@ class LatestDustHourlyOut(BaseModel):
 
 
 class LatestMeteoHourlyOut(BaseModel):
+    bucket_ms: int
     atm_press: float | None
     air_temp: float | None
     air_hum: float | None
@@ -37,6 +40,7 @@ class LatestMeteoHourlyOut(BaseModel):
 
 
 class LatestIvtmHourlyOut(BaseModel):
+    bucket_ms: int
     sensor_ivtm_hum: float | None
     sensor_ivtm_temp: float | None
 
