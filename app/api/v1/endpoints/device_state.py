@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import case, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -16,15 +16,16 @@ def get_available_devices(
     monitoring_post_id: int = Query(..., ge=1),
     db: Session = Depends(get_db),
 ) -> DeviceStateAvailableResponse:
-    is_device_available = case((DeviceState.ping == "BAD", False), else_=True)
     has_device_name = func.nullif(func.trim(DeviceState.device_name), "").is_not(None)
 
     device_types = db.execute(
         select(DeviceState.device_type)
         .join(PlcState, PlcState.id == DeviceState.plc_state_id)
-        .where(PlcState.monitoring_post_id == monitoring_post_id)
+        .where(
+            PlcState.monitoring_post_id == monitoring_post_id,
+            DeviceState.ping == "OK",
+        )
         .group_by(DeviceState.device_type)
-        .having(func.bool_or(is_device_available).is_(True))
         .order_by(DeviceState.device_type.asc())
     ).scalars().all()
 
