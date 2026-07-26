@@ -16,8 +16,16 @@ class MonitoringPostOut(BaseModel):
     is_confirmed: bool
 
 
+class MonitoringPostAdminOut(MonitoringPostOut):
+    notes: str | None
+
+
 class MonitoringPostsResponse(BaseModel):
     monitoring_posts: list[MonitoringPostOut]
+
+
+class MonitoringPostsAdminResponse(BaseModel):
+    monitoring_posts: list[MonitoringPostAdminOut]
 
 
 class MonitoringPostUpdate(BaseModel):
@@ -25,4 +33,5 @@ class MonitoringPostUpdate(BaseModel):
     post_type: PostType | None = None
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
+    notes: str | None = Field(default=None, max_length=5000)
     is_confirmed: bool | None = None

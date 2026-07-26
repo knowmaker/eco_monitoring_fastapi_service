@@ -15,4 +15,5 @@ class MonitoringPost(Base):
     post_type: Mapped[str | None] = mapped_column(Text, nullable=True)
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
