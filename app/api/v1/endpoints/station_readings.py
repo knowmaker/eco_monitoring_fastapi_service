@@ -7,6 +7,8 @@ from app.models.cagg_dust_hourly import CaggDustHourly
 from app.models.cagg_gas_hourly import CaggGasHourly
 from app.models.cagg_ivtm_hourly import CaggIvtmHourly
 from app.models.cagg_meteo_hourly import CaggMeteoHourly
+from app.models.cagg_profile_inversion_hourly import CaggProfileInversionHourly
+from app.models.cagg_profile_levels_hourly import CaggProfileLevelsHourly
 from app.models.pollutant_limit import PollutantLimit
 from app.schemas.station_readings import (
     LatestDustHourlyOut,
@@ -14,6 +16,7 @@ from app.schemas.station_readings import (
     LatestGasSubstanceOut,
     LatestIvtmHourlyOut,
     LatestMeteoHourlyOut,
+    LatestProfileHourlyOut,
     PollutantLimitOut,
     StationLatestHourlyResponse,
 )
@@ -81,7 +84,13 @@ def get_station_latest_hourly_readings(
         CaggIvtmHourly.sensor_ivtm_hum_avg,
         CaggIvtmHourly.sensor_ivtm_temp_avg,
     )
-    bucket_candidates = [gas_bucket_ms, dust_bucket_ms, meteo_bucket_ms, ivtm_bucket_ms]
+    profile_bucket_ms = get_latest_bucket_ms(
+        db,
+        CaggProfileLevelsHourly,
+        monitoring_post_id,
+        CaggProfileLevelsHourly.temperature_avg,
+    )
+    bucket_candidates = [gas_bucket_ms, dust_bucket_ms, meteo_bucket_ms, ivtm_bucket_ms, profile_bucket_ms]
     latest_bucket_ms = max((bucket for bucket in bucket_candidates if bucket is not None), default=None)
 
     if latest_bucket_ms is None:
@@ -92,6 +101,7 @@ def get_station_latest_hourly_readings(
             dust=None,
             meteo=None,
             ivtm=None,
+            profile=None,
         )
 
     gas_rows = (
@@ -194,6 +204,49 @@ def get_station_latest_hourly_readings(
         else None
     )
 
+    profile_stats = (
+        db.execute(
+            select(
+                func.count(CaggProfileLevelsHourly.height).label("levels_count"),
+                func.min(CaggProfileLevelsHourly.height).label("min_height"),
+                func.max(CaggProfileLevelsHourly.height).label("max_height"),
+                func.min(CaggProfileLevelsHourly.temperature_avg).label("min_temperature"),
+                func.max(CaggProfileLevelsHourly.temperature_avg).label("max_temperature"),
+            ).where(
+                CaggProfileLevelsHourly.monitoring_post_id == monitoring_post_id,
+                CaggProfileLevelsHourly.bucket_ms == profile_bucket_ms,
+                CaggProfileLevelsHourly.temperature_avg.is_not(None),
+            )
+        ).one()
+        if profile_bucket_ms is not None
+        else None
+    )
+    profile_inversion_row = (
+        db.scalar(
+            select(CaggProfileInversionHourly).where(
+                CaggProfileInversionHourly.monitoring_post_id == monitoring_post_id,
+                CaggProfileInversionHourly.bucket_ms == profile_bucket_ms,
+            )
+        )
+        if profile_bucket_ms is not None
+        else None
+    )
+    profile = (
+        LatestProfileHourlyOut(
+            bucket_ms=profile_bucket_ms,
+            levels_count=int(profile_stats.levels_count),
+            min_height=to_float(profile_stats.min_height),
+            max_height=to_float(profile_stats.max_height),
+            min_temperature=to_float(profile_stats.min_temperature),
+            max_temperature=to_float(profile_stats.max_temperature),
+            inversion_power=to_float(profile_inversion_row.inversion_power_avg) if profile_inversion_row else None,
+            inversion_lower=to_float(profile_inversion_row.inversion_lower_avg) if profile_inversion_row else None,
+            inversion_upper=to_float(profile_inversion_row.inversion_upper_avg) if profile_inversion_row else None,
+        )
+        if profile_stats and profile_stats.levels_count
+        else None
+    )
+
     return StationLatestHourlyResponse(
         monitoring_post_id=monitoring_post_id,
         bucket_ms=latest_bucket_ms,
@@ -201,4 +254,5 @@ def get_station_latest_hourly_readings(
         dust=dust,
         meteo=meteo,
         ivtm=ivtm,
+        profile=profile,
     )

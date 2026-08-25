@@ -7,6 +7,7 @@ from app.api.v1.endpoints.gas_sensors import router as gas_sensors_router
 from app.api.v1.endpoints.ivtm_state import router as ivtm_state_router
 from app.api.v1.endpoints.meteo_state import router as meteo_state_router
 from app.api.v1.endpoints.monitoring_posts import router as monitoring_posts_router
+from app.api.v1.endpoints.profile_state import router as profile_state_router
 from app.api.v1.endpoints.raw_mqtt_payload import router as raw_mqtt_payload_router
 from app.api.v1.endpoints.station_readings import router as station_readings_router
 
@@ -19,5 +20,6 @@ api_router.include_router(gas_sensors_router)
 api_router.include_router(dust_state_router)
 api_router.include_router(meteo_state_router)
 api_router.include_router(ivtm_state_router)
+api_router.include_router(profile_state_router)
 api_router.include_router(station_readings_router)
 api_router.include_router(raw_mqtt_payload_router)

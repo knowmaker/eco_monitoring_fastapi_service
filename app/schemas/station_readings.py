@@ -45,6 +45,18 @@ class LatestIvtmHourlyOut(BaseModel):
     sensor_ivtm_temp: float | None
 
 
+class LatestProfileHourlyOut(BaseModel):
+    bucket_ms: int
+    levels_count: int
+    min_height: float | None
+    max_height: float | None
+    min_temperature: float | None
+    max_temperature: float | None
+    inversion_power: float | None
+    inversion_lower: float | None
+    inversion_upper: float | None
+
+
 class StationLatestHourlyResponse(BaseModel):
     monitoring_post_id: int
     bucket_ms: int | None
@@ -52,3 +64,4 @@ class StationLatestHourlyResponse(BaseModel):
     dust: LatestDustHourlyOut | None
     meteo: LatestMeteoHourlyOut | None
     ivtm: LatestIvtmHourlyOut | None
+    profile: LatestProfileHourlyOut | None = None
