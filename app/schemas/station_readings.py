@@ -45,13 +45,14 @@ class LatestIvtmHourlyOut(BaseModel):
     sensor_ivtm_temp: float | None
 
 
+class LatestProfileLevelOut(BaseModel):
+    height: float
+    temperature: float | None
+
+
 class LatestProfileHourlyOut(BaseModel):
     bucket_ms: int
-    levels_count: int
-    min_height: float | None
-    max_height: float | None
-    min_temperature: float | None
-    max_temperature: float | None
+    levels: list[LatestProfileLevelOut]
     inversion_power: float | None
     inversion_lower: float | None
     inversion_upper: float | None

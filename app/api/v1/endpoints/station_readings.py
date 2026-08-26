@@ -17,6 +17,7 @@ from app.schemas.station_readings import (
     LatestIvtmHourlyOut,
     LatestMeteoHourlyOut,
     LatestProfileHourlyOut,
+    LatestProfileLevelOut,
     PollutantLimitOut,
     StationLatestHourlyResponse,
 )
@@ -204,22 +205,16 @@ def get_station_latest_hourly_readings(
         else None
     )
 
-    profile_stats = (
+    profile_level_rows = (
         db.execute(
-            select(
-                func.count(CaggProfileLevelsHourly.height).label("levels_count"),
-                func.min(CaggProfileLevelsHourly.height).label("min_height"),
-                func.max(CaggProfileLevelsHourly.height).label("max_height"),
-                func.min(CaggProfileLevelsHourly.temperature_avg).label("min_temperature"),
-                func.max(CaggProfileLevelsHourly.temperature_avg).label("max_temperature"),
-            ).where(
+            select(CaggProfileLevelsHourly).where(
                 CaggProfileLevelsHourly.monitoring_post_id == monitoring_post_id,
                 CaggProfileLevelsHourly.bucket_ms == profile_bucket_ms,
                 CaggProfileLevelsHourly.temperature_avg.is_not(None),
-            )
-        ).one()
+            ).order_by(CaggProfileLevelsHourly.height.asc())
+        ).scalars().all()
         if profile_bucket_ms is not None
-        else None
+        else []
     )
     profile_inversion_row = (
         db.scalar(
@@ -231,19 +226,22 @@ def get_station_latest_hourly_readings(
         if profile_bucket_ms is not None
         else None
     )
+    profile_levels = [
+        LatestProfileLevelOut(
+            height=float(row.height),
+            temperature=to_float(row.temperature_avg),
+        )
+        for row in profile_level_rows
+    ]
     profile = (
         LatestProfileHourlyOut(
             bucket_ms=profile_bucket_ms,
-            levels_count=int(profile_stats.levels_count),
-            min_height=to_float(profile_stats.min_height),
-            max_height=to_float(profile_stats.max_height),
-            min_temperature=to_float(profile_stats.min_temperature),
-            max_temperature=to_float(profile_stats.max_temperature),
+            levels=profile_levels,
             inversion_power=to_float(profile_inversion_row.inversion_power_avg) if profile_inversion_row else None,
             inversion_lower=to_float(profile_inversion_row.inversion_lower_avg) if profile_inversion_row else None,
             inversion_upper=to_float(profile_inversion_row.inversion_upper_avg) if profile_inversion_row else None,
         )
-        if profile_stats and profile_stats.levels_count
+        if profile_levels
         else None
     )
 
