@@ -409,22 +409,11 @@ def filename_datetime_part(value: datetime) -> str:
 
 def build_filename(
     payload: ExportAggregatesRequest,
-    station_rows: list[MonitoringPost],
     start_local: datetime,
     end_local: datetime,
 ) -> str:
-    aggregation_part = {
-        "hourly": "hourly-aggregates",
-        "daily": "daily-aggregates",
-    }[payload.aggregation]
-    device_part = (
-        "all-devices"
-        if set(payload.device_types) == {"gas", "dust", "meteo", "ivtm", "profile"}
-        else "-".join(payload.device_types)
-    )
-    station_part = "all-stations" if payload.station_ids is None else f"{len(station_rows)}stations"
     period_part = f"{filename_datetime_part(start_local)}_to_{filename_datetime_part(end_local)}"
-    return f"eco_export_{aggregation_part}_{device_part}_{station_part}_{period_part}.xlsx"
+    return f"eco_export_{payload.aggregation}_{period_part}.xlsx"
 
 
 @router.post("/aggregates")
@@ -529,7 +518,7 @@ def export_aggregates(
 
     output = BytesIO()
     workbook.save(output)
-    filename = build_filename(payload, station_rows, start_local, end_local)
+    filename = build_filename(payload, start_local, end_local)
     headers = {
         "Content-Disposition": f"attachment; filename={filename}; filename*=UTF-8''{filename}",
     }
