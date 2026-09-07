@@ -240,6 +240,7 @@ def get_station_latest_hourly_readings(
             inversion_power=to_float(profile_inversion_row.inversion_power_avg) if profile_inversion_row else None,
             inversion_lower=to_float(profile_inversion_row.inversion_lower_avg) if profile_inversion_row else None,
             inversion_upper=to_float(profile_inversion_row.inversion_upper_avg) if profile_inversion_row else None,
+            inversion_delta_t=to_float(profile_inversion_row.inversion_delta_t_avg) if profile_inversion_row else None,
         )
         if profile_levels
         else None

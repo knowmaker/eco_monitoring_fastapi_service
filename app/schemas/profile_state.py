@@ -10,6 +10,7 @@ class ProfileInversionOut(BaseModel):
     power: float | None
     lower: float | None
     upper: float | None
+    deltaT: float | None
 
 
 class ProfileHourOut(BaseModel):

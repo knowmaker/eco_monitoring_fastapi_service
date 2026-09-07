@@ -14,3 +14,4 @@ class CaggProfileInversionDaily(Base):
     inversion_power_avg: Mapped[float | None] = mapped_column(Float, nullable=True)
     inversion_lower_avg: Mapped[float | None] = mapped_column(Float, nullable=True)
     inversion_upper_avg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    inversion_delta_t_avg: Mapped[float | None] = mapped_column(Float, nullable=True)

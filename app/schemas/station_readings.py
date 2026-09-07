@@ -56,6 +56,7 @@ class LatestProfileHourlyOut(BaseModel):
     inversion_power: float | None
     inversion_lower: float | None
     inversion_upper: float | None
+    inversion_delta_t: float | None
 
 
 class StationLatestHourlyResponse(BaseModel):

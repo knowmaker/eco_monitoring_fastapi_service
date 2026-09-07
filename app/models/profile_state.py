@@ -17,3 +17,4 @@ class ProfileState(Base):
     inversion_power: Mapped[float | None] = mapped_column(Float, nullable=True)
     inversion_lower: Mapped[float | None] = mapped_column(Float, nullable=True)
     inversion_upper: Mapped[float | None] = mapped_column(Float, nullable=True)
+    inversion_delta_t: Mapped[float | None] = mapped_column(Float, nullable=True)

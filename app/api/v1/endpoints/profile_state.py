@@ -47,7 +47,7 @@ def to_float(value: object) -> float | None:
     return float(value) if value is not None else None
 
 
-def to_inversion(power: object, lower: object, upper: object) -> ProfileInversionOut | None:
+def to_inversion(power: object, lower: object, upper: object, delta_t: object) -> ProfileInversionOut | None:
     power_value = to_float(power)
     if power_value is None or power_value <= 0:
         return None
@@ -55,6 +55,7 @@ def to_inversion(power: object, lower: object, upper: object) -> ProfileInversio
         power=power_value,
         lower=to_float(lower),
         upper=to_float(upper),
+        deltaT=to_float(delta_t),
     )
 
 
@@ -95,6 +96,7 @@ def get_hourly_profile_state(
             CaggProfileInversionHourly.inversion_power_avg.label("power"),
             CaggProfileInversionHourly.inversion_lower_avg.label("lower"),
             CaggProfileInversionHourly.inversion_upper_avg.label("upper"),
+            CaggProfileInversionHourly.inversion_delta_t_avg.label("delta_t"),
         )
         .where(
             CaggProfileInversionHourly.monitoring_post_id == monitoring_post_id,
@@ -112,7 +114,7 @@ def get_hourly_profile_state(
         )
 
     inversions_by_hour = {
-        int(row.hour): to_inversion(row.power, row.lower, row.upper)
+        int(row.hour): to_inversion(row.power, row.lower, row.upper, row.delta_t)
         for row in inversion_rows
     }
 
@@ -168,6 +170,7 @@ def get_monthly_profile_state(
             CaggProfileInversionDaily.inversion_power_avg.label("power"),
             CaggProfileInversionDaily.inversion_lower_avg.label("lower"),
             CaggProfileInversionDaily.inversion_upper_avg.label("upper"),
+            CaggProfileInversionDaily.inversion_delta_t_avg.label("delta_t"),
         )
         .where(
             CaggProfileInversionDaily.monitoring_post_id == monitoring_post_id,
@@ -186,7 +189,7 @@ def get_monthly_profile_state(
         )
 
     inversions_by_day = {
-        int(row.day): to_inversion(row.power, row.lower, row.upper)
+        int(row.day): to_inversion(row.power, row.lower, row.upper, row.delta_t)
         for row in inversion_rows
     }
 

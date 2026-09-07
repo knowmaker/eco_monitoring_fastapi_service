@@ -379,12 +379,14 @@ def append_profile_inversion_sheet(
         "inversion_power",
         "inversion_lower_m",
         "inversion_upper_m",
+        "inversion_delta_t_c",
     ])
     query = base_query(model, station_ids, start_ms, end_ms).where(
         or_(
             model.inversion_power_avg.is_not(None),
             model.inversion_lower_avg.is_not(None),
             model.inversion_upper_avg.is_not(None),
+            model.inversion_delta_t_avg.is_not(None),
         )
     )
     for row in db.execute(query):
@@ -396,6 +398,7 @@ def append_profile_inversion_sheet(
             to_float(item.inversion_power_avg),
             to_float(item.inversion_lower_avg),
             to_float(item.inversion_upper_avg),
+            to_float(item.inversion_delta_t_avg),
         ])
         row_count += 1
         if row_count > MAX_EXPORT_ROWS:
