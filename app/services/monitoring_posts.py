@@ -1,5 +1,5 @@
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.models.monitoring_posts import MonitoringPost
@@ -16,13 +16,13 @@ def get_confirmed_posts(db: Session) -> MonitoringPostsResponse:
     rows = db.scalars(
         select(MonitoringPost)
         .where(MonitoringPost.is_confirmed.is_(True))
-        .order_by(MonitoringPost.serial.asc())
+        .order_by(*_post_ordering())
     ).all()
     return MonitoringPostsResponse(monitoring_posts=[_post_out(row) for row in rows])
 
 
 def get_all_posts_admin(db: Session) -> MonitoringPostsAdminResponse:
-    rows = db.scalars(select(MonitoringPost).order_by(MonitoringPost.serial.asc())).all()
+    rows = db.scalars(select(MonitoringPost).order_by(*_post_ordering())).all()
     return MonitoringPostsAdminResponse(monitoring_posts=[_post_admin_out(row) for row in rows])
 
 
@@ -98,3 +98,12 @@ def _validate_confirmed_post(post: MonitoringPost) -> None:
 
 def _clean_optional_text(value: str | None) -> str | None:
     return value.strip() if value else None
+
+
+def _post_ordering():
+    empty_name_order = case((func.nullif(func.trim(MonitoringPost.name), "").is_(None), 1), else_=0)
+    return (
+        empty_name_order.asc(),
+        func.lower(MonitoringPost.name).asc(),
+        MonitoringPost.serial.asc(),
+    )
