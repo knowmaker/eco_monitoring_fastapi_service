@@ -3,6 +3,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_user
 from app.api.query_params import parse_datetime_range_query, parse_month_query
 from app.core.dates import current_local_date, to_epoch_ms
 from app.db.session import get_db
@@ -84,6 +85,7 @@ def get_raw_ivtm_state(
     monitoring_post_id: int = Query(..., ge=1),
     start_value: str = Query(..., alias="from"),
     end_value: str = Query(..., alias="to"),
+    _current_user=Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> IvtmStateRawResponse:
     start, end = parse_datetime_range_query(start_value, end_value)
