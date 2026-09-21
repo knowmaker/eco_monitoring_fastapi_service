@@ -3,19 +3,24 @@ from datetime import date
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.api.query_params import parse_month_query
-from app.core.dates import current_local_date
+from app.api.query_params import parse_datetime_range_query, parse_month_query
+from app.core.dates import current_local_date, to_epoch_ms
 from app.db.session import get_db
 from app.models.cagg_dust_daily import CaggDustDaily
 from app.models.cagg_dust_hourly import CaggDustHourly
+from app.models.dust_state import DustState
 from app.schemas.dust_state import (
     DustStateDayPoint,
     DustStateHourlyResponse,
     DustStateHourPoint,
     DustStateMetricSeriesOut,
     DustStateMonthlyResponse,
+    DustStateRawMetricSeriesOut,
+    DustStateRawPoint,
+    DustStateRawResponse,
 )
 from app.services.aggregate_readings import MetricSpec, build_metric_series, hourly_metric_values, monthly_metric_values
+from app.services.raw_readings import build_raw_metric_series, raw_metric_rows
 
 
 router = APIRouter(prefix="/dust-state", tags=["dust-state"])
@@ -32,6 +37,13 @@ DAILY_METRICS = [
     MetricSpec("pm2_concentration", CaggDustDaily.pm2_avg),
     MetricSpec("pm10_concentration", CaggDustDaily.pm10_avg),
     MetricSpec("tsp_concentration", CaggDustDaily.tsp_avg),
+]
+
+RAW_METRICS = [
+    MetricSpec("pm1_concentration", DustState.pm1_concentration),
+    MetricSpec("pm2_concentration", DustState.pm2_concentration),
+    MetricSpec("pm10_concentration", DustState.pm10_concentration),
+    MetricSpec("tsp_concentration", DustState.tsp_concentration),
 ]
 
 
@@ -71,3 +83,16 @@ def get_monthly_dust_state(
         range(1, period.days_count + 1),
     )
     return DustStateMonthlyResponse(month=period.key, series=series)
+
+
+@router.get("/raw", response_model=DustStateRawResponse)
+def get_raw_dust_state(
+    monitoring_post_id: int = Query(..., ge=1),
+    start_value: str = Query(..., alias="from"),
+    end_value: str = Query(..., alias="to"),
+    db: Session = Depends(get_db),
+) -> DustStateRawResponse:
+    start, end = parse_datetime_range_query(start_value, end_value)
+    rows = raw_metric_rows(db, DustState, monitoring_post_id, to_epoch_ms(start), to_epoch_ms(end), RAW_METRICS)
+    series = build_raw_metric_series(rows, RAW_METRICS, DustStateRawPoint, DustStateRawMetricSeriesOut)
+    return DustStateRawResponse(start=start.isoformat(), end=end.isoformat(), series=series)

@@ -11,9 +11,19 @@ class DustStateDayPoint(BaseModel):
     value: float | None
 
 
+class DustStateRawPoint(BaseModel):
+    timestamp: str
+    value: float | None
+
+
 class DustStateMetricSeriesOut(BaseModel):
     key: str
     points: list[DustStateHourPoint] | list[DustStateDayPoint]
+
+
+class DustStateRawMetricSeriesOut(BaseModel):
+    key: str
+    points: list[DustStateRawPoint]
 
 
 class DustStateHourlyResponse(BaseModel):
@@ -24,3 +34,9 @@ class DustStateHourlyResponse(BaseModel):
 class DustStateMonthlyResponse(BaseModel):
     month: str
     series: list[DustStateMetricSeriesOut]
+
+
+class DustStateRawResponse(BaseModel):
+    start: str
+    end: str
+    series: list[DustStateRawMetricSeriesOut]
