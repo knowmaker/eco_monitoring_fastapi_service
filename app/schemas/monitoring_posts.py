@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -14,6 +15,8 @@ class MonitoringPostOut(BaseModel):
     latitude: float | None
     longitude: float | None
     is_confirmed: bool
+    active_from: datetime
+    active_to: datetime | None
 
 
 class MonitoringPostAdminOut(MonitoringPostOut):
@@ -35,3 +38,17 @@ class MonitoringPostUpdate(BaseModel):
     longitude: float | None = Field(default=None, ge=-180, le=180)
     notes: str | None = Field(default=None, max_length=5000)
     is_confirmed: bool | None = None
+
+
+class MonitoringPostTransfer(BaseModel):
+    name: str | None = Field(default=None, max_length=200)
+    post_type: PostType | None = None
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    notes: str | None = Field(default=None, max_length=5000)
+    is_confirmed: bool = True
+
+
+class MonitoringPostTransferResponse(BaseModel):
+    monitoring_post: MonitoringPostAdminOut
+    reused_existing: bool

@@ -6,11 +6,18 @@ from app.db.session import get_db
 from app.models.user import User
 from app.schemas.monitoring_posts import (
     MonitoringPostAdminOut,
+    MonitoringPostTransfer,
+    MonitoringPostTransferResponse,
     MonitoringPostsAdminResponse,
     MonitoringPostsResponse,
     MonitoringPostUpdate,
 )
-from app.services.monitoring_posts import get_all_posts_admin, get_confirmed_posts, update_post_admin
+from app.services.monitoring_posts import (
+    get_all_posts_admin,
+    get_confirmed_posts,
+    transfer_post_admin,
+    update_post_admin,
+)
 
 
 router = APIRouter(prefix="/monitoring-posts", tags=["monitoring-posts"])
@@ -37,3 +44,13 @@ def update_monitoring_post(
     _current_user: User = Depends(get_current_admin_user),
 ) -> MonitoringPostAdminOut:
     return update_post_admin(db, monitoring_post_id, payload)
+
+
+@router.post("/{monitoring_post_id}/transfer", response_model=MonitoringPostTransferResponse)
+def transfer_monitoring_post(
+    monitoring_post_id: int,
+    payload: MonitoringPostTransfer,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_admin_user),
+) -> MonitoringPostTransferResponse:
+    return transfer_post_admin(db, monitoring_post_id, payload)
