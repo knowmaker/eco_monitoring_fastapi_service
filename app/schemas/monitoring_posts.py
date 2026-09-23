@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 
 PostType = Literal["stationary", "mobile", "drone"]
+ActivityStatus = Literal["active", "passive", "archived"]
 
 
 class MonitoringPostOut(BaseModel):
@@ -17,6 +18,7 @@ class MonitoringPostOut(BaseModel):
     is_confirmed: bool
     active_from: datetime
     active_to: datetime | None
+    activity_status: ActivityStatus
 
 
 class MonitoringPostAdminOut(MonitoringPostOut):

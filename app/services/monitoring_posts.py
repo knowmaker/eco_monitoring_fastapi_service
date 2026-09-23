@@ -6,6 +6,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.models.monitoring_posts import MonitoringPost
+from app.models.plc_state import PlcState
 from app.schemas.monitoring_posts import (
     MonitoringPostAdminOut,
     MonitoringPostTransfer,
@@ -18,20 +19,32 @@ from app.schemas.monitoring_posts import (
 
 SAME_LOCATION_DISTANCE_METERS = 10.0
 EARTH_RADIUS_METERS = 6_371_008.8
+ACTIVE_THRESHOLD_MS = 24 * 60 * 60 * 1000
 
 
 def get_confirmed_posts(db: Session) -> MonitoringPostsResponse:
-    rows = db.scalars(
-        select(MonitoringPost)
+    latest_raw = _latest_raw_timestamps_subquery()
+    rows = db.execute(
+        select(MonitoringPost, latest_raw.c.last_raw_timestamp_ms)
+        .outerjoin(latest_raw, latest_raw.c.monitoring_post_id == MonitoringPost.id)
         .where(MonitoringPost.is_confirmed.is_(True))
         .order_by(*_post_ordering())
     ).all()
-    return MonitoringPostsResponse(monitoring_posts=[_post_out(row) for row in rows])
+    return MonitoringPostsResponse(
+        monitoring_posts=[_post_out(row, last_raw_timestamp_ms) for row, last_raw_timestamp_ms in rows]
+    )
 
 
 def get_all_posts_admin(db: Session) -> MonitoringPostsAdminResponse:
-    rows = db.scalars(select(MonitoringPost).order_by(*_post_ordering())).all()
-    return MonitoringPostsAdminResponse(monitoring_posts=[_post_admin_out(row) for row in rows])
+    latest_raw = _latest_raw_timestamps_subquery()
+    rows = db.execute(
+        select(MonitoringPost, latest_raw.c.last_raw_timestamp_ms)
+        .outerjoin(latest_raw, latest_raw.c.monitoring_post_id == MonitoringPost.id)
+        .order_by(*_post_ordering())
+    ).all()
+    return MonitoringPostsAdminResponse(
+        monitoring_posts=[_post_admin_out(row, last_raw_timestamp_ms) for row, last_raw_timestamp_ms in rows]
+    )
 
 
 def update_post_admin(db: Session, monitoring_post_id: int, payload: MonitoringPostUpdate) -> MonitoringPostAdminOut:
@@ -56,7 +69,7 @@ def update_post_admin(db: Session, monitoring_post_id: int, payload: MonitoringP
     _validate_confirmed_post(post)
     db.commit()
     db.refresh(post)
-    return _post_admin_out(post)
+    return _post_admin_out(post, _latest_raw_timestamp_ms(db, post.id))
 
 
 def transfer_post_admin(
@@ -114,12 +127,15 @@ def transfer_post_admin(
     db.commit()
     db.refresh(destination_post)
     return MonitoringPostTransferResponse(
-        monitoring_post=_post_admin_out(destination_post),
+        monitoring_post=_post_admin_out(
+            destination_post,
+            _latest_raw_timestamp_ms(db, destination_post.id),
+        ),
         reused_existing=reused_existing,
     )
 
 
-def _post_out(row: MonitoringPost) -> MonitoringPostOut:
+def _post_out(row: MonitoringPost, last_raw_timestamp_ms: int | None) -> MonitoringPostOut:
     return MonitoringPostOut(
         id=row.id,
         serial=row.serial,
@@ -130,10 +146,11 @@ def _post_out(row: MonitoringPost) -> MonitoringPostOut:
         is_confirmed=row.is_confirmed,
         active_from=row.active_from,
         active_to=row.active_to,
+        activity_status=_activity_status(row, last_raw_timestamp_ms),
     )
 
 
-def _post_admin_out(row: MonitoringPost) -> MonitoringPostAdminOut:
+def _post_admin_out(row: MonitoringPost, last_raw_timestamp_ms: int | None) -> MonitoringPostAdminOut:
     return MonitoringPostAdminOut(
         id=row.id,
         serial=row.serial,
@@ -144,7 +161,37 @@ def _post_admin_out(row: MonitoringPost) -> MonitoringPostAdminOut:
         is_confirmed=row.is_confirmed,
         active_from=row.active_from,
         active_to=row.active_to,
+        activity_status=_activity_status(row, last_raw_timestamp_ms),
         notes=row.notes,
+    )
+
+
+def _activity_status(row: MonitoringPost, last_raw_timestamp_ms: int | None) -> str:
+    if row.active_to is not None:
+        return "archived"
+    if last_raw_timestamp_ms is None:
+        return "passive"
+
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    return "active" if now_ms - last_raw_timestamp_ms <= ACTIVE_THRESHOLD_MS else "passive"
+
+
+def _latest_raw_timestamps_subquery():
+    return (
+        select(
+            PlcState.monitoring_post_id,
+            func.max(PlcState.plc_timestamp_ms).label("last_raw_timestamp_ms"),
+        )
+        .group_by(PlcState.monitoring_post_id)
+        .subquery()
+    )
+
+
+def _latest_raw_timestamp_ms(db: Session, monitoring_post_id: int) -> int | None:
+    return db.scalar(
+        select(func.max(PlcState.plc_timestamp_ms)).where(
+            PlcState.monitoring_post_id == monitoring_post_id
+        )
     )
 
 
