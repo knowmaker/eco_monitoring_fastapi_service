@@ -72,6 +72,22 @@ def update_post_admin(db: Session, monitoring_post_id: int, payload: MonitoringP
     return _post_admin_out(post, _latest_raw_timestamp_ms(db, post.id))
 
 
+def archive_post_admin(db: Session, monitoring_post_id: int) -> MonitoringPostAdminOut:
+    post = db.get(MonitoringPost, monitoring_post_id)
+    if post is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Станция не найдена.")
+    if post.active_to is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Станция уже находится в архиве.",
+        )
+
+    post.active_to = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(post)
+    return _post_admin_out(post, _latest_raw_timestamp_ms(db, post.id))
+
+
 def transfer_post_admin(
     db: Session,
     monitoring_post_id: int,

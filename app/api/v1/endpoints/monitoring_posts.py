@@ -13,6 +13,7 @@ from app.schemas.monitoring_posts import (
     MonitoringPostUpdate,
 )
 from app.services.monitoring_posts import (
+    archive_post_admin,
     get_all_posts_admin,
     get_confirmed_posts,
     transfer_post_admin,
@@ -44,6 +45,15 @@ def update_monitoring_post(
     _current_user: User = Depends(get_current_admin_user),
 ) -> MonitoringPostAdminOut:
     return update_post_admin(db, monitoring_post_id, payload)
+
+
+@router.post("/{monitoring_post_id}/archive", response_model=MonitoringPostAdminOut)
+def archive_monitoring_post(
+    monitoring_post_id: int,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_admin_user),
+) -> MonitoringPostAdminOut:
+    return archive_post_admin(db, monitoring_post_id)
 
 
 @router.post("/{monitoring_post_id}/transfer", response_model=MonitoringPostTransferResponse)
