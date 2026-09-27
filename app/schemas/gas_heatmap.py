@@ -7,11 +7,15 @@ from pydantic import BaseModel, Field
 HeatmapDataKind = Literal["observed", "forecast", "unavailable"]
 
 
-class GasHeatmapPointOut(BaseModel):
-    monitoring_post_id: int
+class GasHeatmapCellOut(BaseModel):
     latitude: float
     longitude: float
+    south: float
+    west: float
+    north: float
+    east: float
     value: float
+    confidence: float
     lower_bound: float | None = None
     upper_bound: float | None = None
 
@@ -22,13 +26,16 @@ class GasHeatmapResponse(BaseModel):
     hour_end: datetime
     data_kind: HeatmapDataKind
     generated_at: datetime | None = None
-    points: list[GasHeatmapPointOut] = Field(default_factory=list)
+    source_station_count: int = 0
+    wind_speed: float | None = None
+    wind_direction: float | None = None
+    cells: list[GasHeatmapCellOut] = Field(default_factory=list)
 
 
 class GasHeatmapTimelineItemOut(BaseModel):
     hour_start: datetime
     data_kind: Literal["observed", "forecast"]
-    available_points: int
+    available_cells: int
 
 
 class GasHeatmapTimelineResponse(BaseModel):

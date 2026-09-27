@@ -1,13 +1,11 @@
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import Integer, cast, func, literal, select, union_all
+from sqlalchemy import Integer, and_, cast, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.models.gas_hourly_feature import GasHourlyFeature
-from app.models.gas_prediction import GasPrediction
-from app.models.monitoring_posts import MonitoringPost
+from app.models.gas_concentration_grid import GasConcentrationGrid
 from app.schemas.gas_heatmap import (
-    GasHeatmapPointOut,
+    GasHeatmapCellOut,
     GasHeatmapResponse,
     GasHeatmapTimelineItemOut,
     GasHeatmapTimelineResponse,
@@ -30,49 +28,29 @@ def get_heatmap_timeline(
     current_hour = _utc_hour()
     start = current_hour - timedelta(hours=past_hours)
     end = current_hour + timedelta(hours=future_hours + 1)
-
-    observed = (
-        select(
-            GasHourlyFeature.bucket_start.label("hour_start"),
-            literal("observed").label("data_kind"),
-            cast(func.count(), Integer).label("available_points"),
-        )
-        .join(MonitoringPost, MonitoringPost.id == GasHourlyFeature.monitoring_post_id)
-        .where(
-            GasHourlyFeature.substance_code == substance_code,
-            GasHourlyFeature.bucket_start >= start,
-            GasHourlyFeature.bucket_start < current_hour,
-            GasHourlyFeature.filtered_hourly_mean.is_not(None),
-            MonitoringPost.latitude.is_not(None),
-            MonitoringPost.longitude.is_not(None),
-        )
-        .group_by(GasHourlyFeature.bucket_start)
-    )
-    forecast = (
-        select(
-            GasPrediction.target_start.label("hour_start"),
-            literal("forecast").label("data_kind"),
-            cast(func.count(), Integer).label("available_points"),
-        )
-        .join(MonitoringPost, MonitoringPost.id == GasPrediction.monitoring_post_id)
-        .where(
-            GasPrediction.substance_code == substance_code,
-            GasPrediction.target_start >= current_hour,
-            GasPrediction.target_start < end,
-            GasPrediction.status == "ready",
-            GasPrediction.predicted_value.is_not(None),
-            MonitoringPost.latitude.is_not(None),
-            MonitoringPost.longitude.is_not(None),
-        )
-        .group_by(GasPrediction.target_start)
-    )
-    available = union_all(observed, forecast).subquery()
     rows = db.execute(
         select(
-            available.c.hour_start,
-            available.c.data_kind,
-            available.c.available_points,
-        ).order_by(available.c.hour_start)
+            GasConcentrationGrid.hour_start,
+            GasConcentrationGrid.data_kind,
+            cast(func.count(), Integer).label("available_cells"),
+        )
+        .where(
+            GasConcentrationGrid.substance_code == substance_code,
+            GasConcentrationGrid.hour_start >= start,
+            GasConcentrationGrid.hour_start < end,
+            or_(
+                and_(
+                    GasConcentrationGrid.hour_start < current_hour,
+                    GasConcentrationGrid.data_kind == "observed",
+                ),
+                and_(
+                    GasConcentrationGrid.hour_start >= current_hour,
+                    GasConcentrationGrid.data_kind == "forecast",
+                ),
+            ),
+        )
+        .group_by(GasConcentrationGrid.hour_start, GasConcentrationGrid.data_kind)
+        .order_by(GasConcentrationGrid.hour_start)
     ).all()
     return GasHeatmapTimelineResponse(
         substance_code=substance_code,
@@ -81,7 +59,7 @@ def get_heatmap_timeline(
             GasHeatmapTimelineItemOut(
                 hour_start=row.hour_start,
                 data_kind=row.data_kind,
-                available_points=row.available_points,
+                available_cells=row.available_cells,
             )
             for row in rows
         ],
@@ -94,67 +72,48 @@ def get_heatmap_frame(
     hour_start: datetime,
 ) -> GasHeatmapResponse:
     selected_hour = _utc_hour(hour_start)
-    current_hour = _utc_hour()
-    is_forecast = selected_hour >= current_hour
-    if is_forecast:
-        rows = db.execute(
-            select(
-                GasPrediction.monitoring_post_id,
-                MonitoringPost.latitude,
-                MonitoringPost.longitude,
-                GasPrediction.predicted_value.label("value"),
-                GasPrediction.lower_bound,
-                GasPrediction.upper_bound,
-                GasPrediction.generated_at,
-            )
-            .join(MonitoringPost, MonitoringPost.id == GasPrediction.monitoring_post_id)
-            .where(
-                GasPrediction.substance_code == substance_code,
-                GasPrediction.target_start == selected_hour,
-                GasPrediction.status == "ready",
-                GasPrediction.predicted_value.is_not(None),
-                MonitoringPost.latitude.is_not(None),
-                MonitoringPost.longitude.is_not(None),
-            )
-            .order_by(MonitoringPost.id)
-        ).all()
-        generated_at = max((row.generated_at for row in rows), default=None)
-        data_kind = "forecast" if rows else "unavailable"
-    else:
-        rows = db.execute(
-            select(
-                GasHourlyFeature.monitoring_post_id,
-                MonitoringPost.latitude,
-                MonitoringPost.longitude,
-                GasHourlyFeature.filtered_hourly_mean.label("value"),
-            )
-            .join(MonitoringPost, MonitoringPost.id == GasHourlyFeature.monitoring_post_id)
-            .where(
-                GasHourlyFeature.substance_code == substance_code,
-                GasHourlyFeature.bucket_start == selected_hour,
-                GasHourlyFeature.filtered_hourly_mean.is_not(None),
-                MonitoringPost.latitude.is_not(None),
-                MonitoringPost.longitude.is_not(None),
-            )
-            .order_by(MonitoringPost.id)
-        ).all()
-        generated_at = None
-        data_kind = "observed" if rows else "unavailable"
+    data_kind = "forecast" if selected_hour >= _utc_hour() else "observed"
+    rows = db.execute(
+        select(GasConcentrationGrid)
+        .where(
+            GasConcentrationGrid.substance_code == substance_code,
+            GasConcentrationGrid.hour_start == selected_hour,
+            GasConcentrationGrid.data_kind == data_kind,
+        )
+        .order_by(
+            GasConcentrationGrid.cluster_id,
+            GasConcentrationGrid.grid_y,
+            GasConcentrationGrid.grid_x,
+        )
+    ).scalars().all()
+    if not rows:
+        data_kind = "unavailable"
+    station_counts = {
+        row.cluster_id: row.source_station_count
+        for row in rows
+    }
 
     return GasHeatmapResponse(
         substance_code=substance_code,
         hour_start=selected_hour,
         hour_end=selected_hour + timedelta(hours=1),
         data_kind=data_kind,
-        generated_at=generated_at,
-        points=[
-            GasHeatmapPointOut(
-                monitoring_post_id=row.monitoring_post_id,
+        generated_at=max((row.generated_at for row in rows), default=None),
+        source_station_count=sum(station_counts.values()),
+        wind_speed=rows[0].wind_speed if rows else None,
+        wind_direction=rows[0].wind_direction if rows else None,
+        cells=[
+            GasHeatmapCellOut(
                 latitude=row.latitude,
                 longitude=row.longitude,
+                south=row.south,
+                west=row.west,
+                north=row.north,
+                east=row.east,
                 value=row.value,
-                lower_bound=row.lower_bound if is_forecast else None,
-                upper_bound=row.upper_bound if is_forecast else None,
+                confidence=row.confidence,
+                lower_bound=row.lower_bound,
+                upper_bound=row.upper_bound,
             )
             for row in rows
         ],
