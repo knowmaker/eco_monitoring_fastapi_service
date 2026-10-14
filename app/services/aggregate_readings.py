@@ -146,6 +146,37 @@ def monthly_substance_values(
     return _substance_rows_by_period(rows)
 
 
+def monthly_hourly_substance_values(
+    db: Session,
+    model: type,
+    monitoring_post_id: int,
+    year: int,
+    month: int,
+) -> dict[str, dict[int, float | None]]:
+    local_ts = func.timezone(APP_TIMEZONE, func.to_timestamp(model.bucket_ms / 1000.0))
+    day_expr = cast(func.extract("day", local_ts), Integer)
+    month_expr = cast(func.extract("month", local_ts), Integer)
+    year_expr = cast(func.extract("year", local_ts), Integer)
+    daily_median = func.percentile_cont(0.5).within_group(model.value_avg)
+
+    rows = db.execute(
+        select(
+            model.substance_code.label("substance_code"),
+            day_expr.label("period_index"),
+            daily_median.label("value"),
+        )
+        .where(
+            model.monitoring_post_id == monitoring_post_id,
+            year_expr == year,
+            month_expr == month,
+        )
+        .group_by(model.substance_code, day_expr)
+        .order_by(model.substance_code.asc(), day_expr.asc())
+    ).all()
+
+    return _substance_rows_by_period(rows)
+
+
 def build_substance_series(
     values_by_substance: dict[str, dict[int, float | None]],
     point_model: type[BaseModel],

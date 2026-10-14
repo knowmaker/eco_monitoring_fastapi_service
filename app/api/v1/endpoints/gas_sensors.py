@@ -1,6 +1,7 @@
 from datetime import date
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -10,6 +11,8 @@ from app.db.session import get_db
 from app.models.cagg_gas_daily import CaggGasDaily
 from app.models.cagg_gas_hourly import CaggGasHourly
 from app.models.gas_sensors import GasSensors
+from app.models.monitoring_posts import MonitoringPost
+from app.models.mosecom_hourly_reading import MosecomHourlyReading
 from app.schemas.gas_sensors import (
     GasSensorsDayPoint,
     GasSensorsHourPoint,
@@ -20,7 +23,12 @@ from app.schemas.gas_sensors import (
     GasSensorsRawSubstanceSeriesOut,
     GasSensorsSubstanceSeriesOut,
 )
-from app.services.aggregate_readings import build_substance_series, hourly_substance_values, monthly_substance_values
+from app.services.aggregate_readings import (
+    build_substance_series,
+    hourly_substance_values,
+    monthly_hourly_substance_values,
+    monthly_substance_values,
+)
 from app.services.raw_readings import build_raw_substance_series, raw_substance_rows
 
 
@@ -34,7 +42,8 @@ def get_hourly_gas_sensors(
     db: Session = Depends(get_db),
 ) -> GasSensorsHourlyResponse:
     day = target_date or current_local_date()
-    values = hourly_substance_values(db, CaggGasHourly, monitoring_post_id, day)
+    model = _hourly_model(db, monitoring_post_id)
+    values = hourly_substance_values(db, model, monitoring_post_id, day)
     substances = build_substance_series(values, GasSensorsHourPoint, GasSensorsSubstanceSeriesOut, "hour", range(24))
     return GasSensorsHourlyResponse(date=day.isoformat(), substances=substances)
 
@@ -46,7 +55,12 @@ def get_monthly_gas_sensors(
     db: Session = Depends(get_db),
 ) -> GasSensorsMonthlyResponse:
     period = parse_month_query(target_month)
-    values = monthly_substance_values(db, CaggGasDaily, monitoring_post_id, period.year, period.month)
+    if _is_mosecom_post(db, monitoring_post_id):
+        values = monthly_hourly_substance_values(
+            db, MosecomHourlyReading, monitoring_post_id, period.year, period.month
+        )
+    else:
+        values = monthly_substance_values(db, CaggGasDaily, monitoring_post_id, period.year, period.month)
     substances = build_substance_series(
         values,
         GasSensorsDayPoint,
@@ -69,3 +83,13 @@ def get_raw_gas_sensors(
     rows = raw_substance_rows(db, GasSensors, monitoring_post_id, to_epoch_ms(start), to_epoch_ms(end))
     substances = build_raw_substance_series(rows, GasSensorsRawPoint, GasSensorsRawSubstanceSeriesOut)
     return GasSensorsRawResponse(start=start.isoformat(), end=end.isoformat(), substances=substances)
+
+
+def _hourly_model(db: Session, monitoring_post_id: int) -> type:
+    return MosecomHourlyReading if _is_mosecom_post(db, monitoring_post_id) else CaggGasHourly
+
+
+def _is_mosecom_post(db: Session, monitoring_post_id: int) -> bool:
+    return db.scalar(
+        select(MonitoringPost.source).where(MonitoringPost.id == monitoring_post_id)
+    ) == "mosecom"

@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 
 PostType = Literal["stationary", "mobile", "drone"]
+StationSource = Literal["internal", "mosecom"]
 ActivityStatus = Literal["active", "passive", "archived"]
 
 
@@ -13,6 +14,7 @@ class MonitoringPostOut(BaseModel):
     serial: str
     name: str | None
     post_type: PostType | None
+    source: StationSource
     latitude: float | None
     longitude: float | None
     is_confirmed: bool

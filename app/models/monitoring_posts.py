@@ -18,6 +18,7 @@ class MonitoringPost(Base):
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(Text, nullable=False, default="internal")
     is_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     active_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     active_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

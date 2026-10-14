@@ -8,6 +8,8 @@ from app.models.cagg_ivtm_hourly import CaggIvtmHourly
 from app.models.cagg_meteo_hourly import CaggMeteoHourly
 from app.models.cagg_profile_inversion_hourly import CaggProfileInversionHourly
 from app.models.cagg_profile_levels_hourly import CaggProfileLevelsHourly
+from app.models.monitoring_posts import MonitoringPost
+from app.models.mosecom_hourly_reading import MosecomHourlyReading
 from app.models.pollutant_limit import PollutantLimit
 from app.schemas.station_readings import (
     LatestDustHourlyOut,
@@ -24,6 +26,10 @@ from app.schemas.station_readings import (
 
 def get_latest_hourly_readings(db: Session, monitoring_post_id: int) -> StationLatestHourlyResponse:
     limits_by_code = _pollutant_limits_by_code(db)
+    post = db.get(MonitoringPost, monitoring_post_id)
+    if post is not None and post.source == "mosecom":
+        return _latest_mosecom_readings(db, monitoring_post_id, limits_by_code)
+
     buckets = {
         "gas": _latest_bucket(db, CaggGasHourly, monitoring_post_id, CaggGasHourly.value_avg),
         "dust": _latest_bucket(
@@ -80,6 +86,57 @@ def get_latest_hourly_readings(db: Session, monitoring_post_id: int) -> StationL
         meteo=_latest_meteo(db, monitoring_post_id, buckets["meteo"]),
         ivtm=_latest_ivtm(db, monitoring_post_id, buckets["ivtm"]),
         profile=_latest_profile(db, monitoring_post_id, buckets["profile"]),
+    )
+
+
+def _latest_mosecom_readings(
+    db: Session,
+    monitoring_post_id: int,
+    limits_by_code: dict[str, PollutantLimit],
+) -> StationLatestHourlyResponse:
+    bucket_ms = db.scalar(
+        select(func.max(MosecomHourlyReading.bucket_ms)).where(
+            MosecomHourlyReading.monitoring_post_id == monitoring_post_id
+        )
+    )
+    if bucket_ms is None:
+        return StationLatestHourlyResponse(
+            monitoring_post_id=monitoring_post_id,
+            bucket_ms=None,
+            gas=None,
+            dust=None,
+            meteo=None,
+            ivtm=None,
+            profile=None,
+        )
+
+    rows = db.scalars(
+        select(MosecomHourlyReading)
+        .where(
+            MosecomHourlyReading.monitoring_post_id == monitoring_post_id,
+            MosecomHourlyReading.bucket_ms == bucket_ms,
+        )
+        .order_by(MosecomHourlyReading.substance_code.asc())
+    ).all()
+    gas = LatestGasHourlyOut(
+        bucket_ms=bucket_ms,
+        substances=[
+            LatestGasSubstanceOut(
+                substance_code=row.substance_code,
+                value=to_float(row.value_avg),
+                limit=_limit_out(limits_by_code.get(row.substance_code.upper())),
+            )
+            for row in rows
+        ],
+    )
+    return StationLatestHourlyResponse(
+        monitoring_post_id=monitoring_post_id,
+        bucket_ms=bucket_ms,
+        gas=gas,
+        dust=None,
+        meteo=None,
+        ivtm=None,
+        profile=None,
     )
 
 
