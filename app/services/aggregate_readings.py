@@ -1,3 +1,4 @@
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
@@ -96,12 +97,13 @@ def hourly_substance_values(
     model: type,
     monitoring_post_id: int,
     day: date,
+    substance_codes: Collection[str] | None = None,
 ) -> dict[str, dict[int, float | None]]:
     local_ts = func.timezone(APP_TIMEZONE, func.to_timestamp(model.bucket_ms / 1000.0))
     hour_expr = cast(func.extract("hour", local_ts), Integer)
     date_expr = cast(local_ts, Date)
 
-    rows = db.execute(
+    query = (
         select(
             model.substance_code.label("substance_code"),
             hour_expr.label("period_index"),
@@ -112,7 +114,10 @@ def hourly_substance_values(
             date_expr == day,
         )
         .order_by(model.substance_code.asc(), hour_expr.asc())
-    ).all()
+    )
+    if substance_codes is not None:
+        query = query.where(model.substance_code.in_(substance_codes))
+    rows = db.execute(query).all()
 
     return _substance_rows_by_period(rows)
 
@@ -152,6 +157,7 @@ def monthly_hourly_substance_values(
     monitoring_post_id: int,
     year: int,
     month: int,
+    substance_codes: Collection[str] | None = None,
 ) -> dict[str, dict[int, float | None]]:
     local_ts = func.timezone(APP_TIMEZONE, func.to_timestamp(model.bucket_ms / 1000.0))
     day_expr = cast(func.extract("day", local_ts), Integer)
@@ -159,7 +165,7 @@ def monthly_hourly_substance_values(
     year_expr = cast(func.extract("year", local_ts), Integer)
     daily_median = func.percentile_cont(0.5).within_group(model.value_avg)
 
-    rows = db.execute(
+    query = (
         select(
             model.substance_code.label("substance_code"),
             day_expr.label("period_index"),
@@ -172,7 +178,10 @@ def monthly_hourly_substance_values(
         )
         .group_by(model.substance_code, day_expr)
         .order_by(model.substance_code.asc(), day_expr.asc())
-    ).all()
+    )
+    if substance_codes is not None:
+        query = query.where(model.substance_code.in_(substance_codes))
+    rows = db.execute(query).all()
 
     return _substance_rows_by_period(rows)
 

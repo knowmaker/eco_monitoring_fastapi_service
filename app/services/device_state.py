@@ -1,6 +1,7 @@
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.mosecom import MOSECOM_DUST_CODES, MOSECOM_GAS_CODES
 from app.models.device_state import DeviceState
 from app.models.monitoring_posts import MonitoringPost
 from app.models.mosecom_hourly_reading import MosecomHourlyReading
@@ -11,16 +12,19 @@ from app.schemas.device_state import DeviceStateAvailableOut, DeviceStateAvailab
 def get_available_devices(db: Session, monitoring_post_id: int) -> DeviceStateAvailableResponse:
     post = db.get(MonitoringPost, monitoring_post_id)
     if post is not None and post.source == "mosecom":
-        has_readings = db.scalar(
-            select(MosecomHourlyReading.monitoring_post_id)
-            .where(MosecomHourlyReading.monitoring_post_id == monitoring_post_id)
-            .limit(1)
+        substance_codes = set(
+            db.scalars(
+                select(MosecomHourlyReading.substance_code)
+                .where(MosecomHourlyReading.monitoring_post_id == monitoring_post_id)
+                .distinct()
+            ).all()
         )
-        return DeviceStateAvailableResponse(
-            devices=[DeviceStateAvailableOut(device_type="gas", device_name="Мосэкомониторинг")]
-            if has_readings is not None
-            else []
-        )
+        devices = []
+        if substance_codes.intersection(MOSECOM_GAS_CODES):
+            devices.append(DeviceStateAvailableOut(device_type="gas", device_name="Мосэкомониторинг"))
+        if substance_codes.intersection(MOSECOM_DUST_CODES):
+            devices.append(DeviceStateAvailableOut(device_type="dust", device_name="Мосэкомониторинг"))
+        return DeviceStateAvailableResponse(devices=devices)
 
     has_device_name = func.nullif(func.trim(DeviceState.device_name), "").is_not(None)
     device_types = db.execute(

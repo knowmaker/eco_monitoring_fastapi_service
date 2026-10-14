@@ -1,6 +1,7 @@
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from app.core.mosecom import MOSECOM_DUST_CODES, MOSECOM_GAS_CODES
 from app.core.values import to_float
 from app.models.cagg_dust_hourly import CaggDustHourly
 from app.models.cagg_gas_hourly import CaggGasHourly
@@ -94,12 +95,13 @@ def _latest_mosecom_readings(
     monitoring_post_id: int,
     limits_by_code: dict[str, PollutantLimit],
 ) -> StationLatestHourlyResponse:
-    bucket_ms = db.scalar(
-        select(func.max(MosecomHourlyReading.bucket_ms)).where(
-            MosecomHourlyReading.monitoring_post_id == monitoring_post_id
-        )
+    gas_bucket_ms = _latest_mosecom_bucket(db, monitoring_post_id, MOSECOM_GAS_CODES)
+    dust_bucket_ms = _latest_mosecom_bucket(db, monitoring_post_id, MOSECOM_DUST_CODES)
+    latest_bucket_ms = max(
+        (bucket for bucket in (gas_bucket_ms, dust_bucket_ms) if bucket is not None),
+        default=None,
     )
-    if bucket_ms is None:
+    if latest_bucket_ms is None:
         return StationLatestHourlyResponse(
             monitoring_post_id=monitoring_post_id,
             bucket_ms=None,
@@ -110,33 +112,74 @@ def _latest_mosecom_readings(
             profile=None,
         )
 
-    rows = db.scalars(
-        select(MosecomHourlyReading)
-        .where(
-            MosecomHourlyReading.monitoring_post_id == monitoring_post_id,
-            MosecomHourlyReading.bucket_ms == bucket_ms,
-        )
-        .order_by(MosecomHourlyReading.substance_code.asc())
-    ).all()
-    gas = LatestGasHourlyOut(
-        bucket_ms=bucket_ms,
-        substances=[
-            LatestGasSubstanceOut(
-                substance_code=row.substance_code,
-                value=to_float(row.value_avg),
-                limit=_limit_out(limits_by_code.get(row.substance_code.upper())),
+    gas = None
+    if gas_bucket_ms is not None:
+        gas_rows = db.scalars(
+            select(MosecomHourlyReading)
+            .where(
+                MosecomHourlyReading.monitoring_post_id == monitoring_post_id,
+                MosecomHourlyReading.bucket_ms == gas_bucket_ms,
+                MosecomHourlyReading.substance_code.in_(MOSECOM_GAS_CODES),
             )
-            for row in rows
-        ],
-    )
+            .order_by(MosecomHourlyReading.substance_code.asc())
+        ).all()
+        gas = LatestGasHourlyOut(
+            bucket_ms=gas_bucket_ms,
+            substances=[
+                LatestGasSubstanceOut(
+                    substance_code=row.substance_code,
+                    value=to_float(row.value_avg),
+                    limit=_limit_out(limits_by_code.get(row.substance_code.upper())),
+                )
+                for row in gas_rows
+            ],
+        )
+
+    dust = None
+    if dust_bucket_ms is not None:
+        dust_rows = {
+            row.substance_code: row
+            for row in db.scalars(
+                select(MosecomHourlyReading).where(
+                    MosecomHourlyReading.monitoring_post_id == monitoring_post_id,
+                    MosecomHourlyReading.bucket_ms == dust_bucket_ms,
+                    MosecomHourlyReading.substance_code.in_(MOSECOM_DUST_CODES),
+                )
+            ).all()
+        }
+        dust = LatestDustHourlyOut(
+            bucket_ms=dust_bucket_ms,
+            pm1=None,
+            pm2=to_float(dust_rows["PM2.5"].value_avg) if "PM2.5" in dust_rows else None,
+            pm10=to_float(dust_rows["PM10"].value_avg) if "PM10" in dust_rows else None,
+            tsp=None,
+            limits={
+                "pm2": _limit_out(limits_by_code.get("PM2.5")),
+                "pm10": _limit_out(limits_by_code.get("PM10")),
+            },
+        )
+
     return StationLatestHourlyResponse(
         monitoring_post_id=monitoring_post_id,
-        bucket_ms=bucket_ms,
+        bucket_ms=latest_bucket_ms,
         gas=gas,
-        dust=None,
+        dust=dust,
         meteo=None,
         ivtm=None,
         profile=None,
+    )
+
+
+def _latest_mosecom_bucket(
+    db: Session,
+    monitoring_post_id: int,
+    substance_codes: tuple[str, ...],
+) -> int | None:
+    return db.scalar(
+        select(func.max(MosecomHourlyReading.bucket_ms)).where(
+            MosecomHourlyReading.monitoring_post_id == monitoring_post_id,
+            MosecomHourlyReading.substance_code.in_(substance_codes),
+        )
     )
 
 

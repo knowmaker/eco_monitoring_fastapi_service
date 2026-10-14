@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.api.query_params import parse_datetime_range_query, parse_month_query
 from app.core.dates import current_local_date, to_epoch_ms
+from app.core.mosecom import MOSECOM_GAS_CODES
 from app.db.session import get_db
 from app.models.cagg_gas_daily import CaggGasDaily
 from app.models.cagg_gas_hourly import CaggGasHourly
@@ -43,7 +44,8 @@ def get_hourly_gas_sensors(
 ) -> GasSensorsHourlyResponse:
     day = target_date or current_local_date()
     model = _hourly_model(db, monitoring_post_id)
-    values = hourly_substance_values(db, model, monitoring_post_id, day)
+    substance_codes = MOSECOM_GAS_CODES if model is MosecomHourlyReading else None
+    values = hourly_substance_values(db, model, monitoring_post_id, day, substance_codes)
     substances = build_substance_series(values, GasSensorsHourPoint, GasSensorsSubstanceSeriesOut, "hour", range(24))
     return GasSensorsHourlyResponse(date=day.isoformat(), substances=substances)
 
@@ -57,7 +59,12 @@ def get_monthly_gas_sensors(
     period = parse_month_query(target_month)
     if _is_mosecom_post(db, monitoring_post_id):
         values = monthly_hourly_substance_values(
-            db, MosecomHourlyReading, monitoring_post_id, period.year, period.month
+            db,
+            MosecomHourlyReading,
+            monitoring_post_id,
+            period.year,
+            period.month,
+            MOSECOM_GAS_CODES,
         )
     else:
         values = monthly_substance_values(db, CaggGasDaily, monitoring_post_id, period.year, period.month)
