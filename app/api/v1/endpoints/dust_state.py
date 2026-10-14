@@ -14,6 +14,7 @@ from app.models.cagg_dust_hourly import CaggDustHourly
 from app.models.dust_state import DustState
 from app.models.monitoring_posts import MonitoringPost
 from app.models.mosecom_hourly_reading import MosecomHourlyReading
+from app.models.pollutant_limit import PollutantLimit
 from app.schemas.dust_state import (
     DustStateDayPoint,
     DustStateHourlyResponse,
@@ -36,6 +37,13 @@ from app.services.raw_readings import build_raw_metric_series, raw_metric_rows
 
 
 router = APIRouter(prefix="/dust-state", tags=["dust-state"])
+
+DUST_POLLUTANT_BY_METRIC = {
+    "pm1_concentration": "PM1",
+    "pm2_concentration": "PM2.5",
+    "pm10_concentration": "PM10",
+    "tsp_concentration": "TSP",
+}
 
 HOURLY_METRICS = [
     MetricSpec("pm1_concentration", CaggDustHourly.pm1_avg),
@@ -70,10 +78,9 @@ def get_hourly_dust_state(
         substance_values = hourly_substance_values(
             db, MosecomHourlyReading, monitoring_post_id, day, MOSECOM_DUST_CODES
         )
-        return DustStateHourlyResponse(
-            date=day.isoformat(),
-            series=_build_mosecom_series(substance_values, DustStateHourPoint, "hour", range(24)),
-        )
+        series = _build_mosecom_series(substance_values, DustStateHourPoint, "hour", range(24))
+        _set_pdk_values(db, series)
+        return DustStateHourlyResponse(date=day.isoformat(), series=series)
 
     values = hourly_metric_values(db, CaggDustHourly, monitoring_post_id, day, HOURLY_METRICS)
     series = build_metric_series(
@@ -84,6 +91,7 @@ def get_hourly_dust_state(
         "hour",
         range(24),
     )
+    _set_pdk_values(db, series)
     return DustStateHourlyResponse(date=day.isoformat(), series=series)
 
 
@@ -103,15 +111,14 @@ def get_monthly_dust_state(
             period.month,
             MOSECOM_DUST_CODES,
         )
-        return DustStateMonthlyResponse(
-            month=period.key,
-            series=_build_mosecom_series(
-                substance_values,
-                DustStateDayPoint,
-                "day",
-                range(1, period.days_count + 1),
-            ),
+        series = _build_mosecom_series(
+            substance_values,
+            DustStateDayPoint,
+            "day",
+            range(1, period.days_count + 1),
         )
+        _set_pdk_values(db, series)
+        return DustStateMonthlyResponse(month=period.key, series=series)
 
     values = monthly_metric_values(db, CaggDustDaily, monitoring_post_id, period.year, period.month, DAILY_METRICS)
     series = build_metric_series(
@@ -122,6 +129,7 @@ def get_monthly_dust_state(
         "day",
         range(1, period.days_count + 1),
     )
+    _set_pdk_values(db, series)
     return DustStateMonthlyResponse(month=period.key, series=series)
 
 
@@ -136,6 +144,7 @@ def get_raw_dust_state(
     start, end = parse_datetime_range_query(start_value, end_value)
     rows = raw_metric_rows(db, DustState, monitoring_post_id, to_epoch_ms(start), to_epoch_ms(end), RAW_METRICS)
     series = build_raw_metric_series(rows, RAW_METRICS, DustStateRawPoint, DustStateRawMetricSeriesOut)
+    _set_pdk_values(db, series)
     return DustStateRawResponse(start=start.isoformat(), end=end.isoformat(), series=series)
 
 
@@ -161,3 +170,19 @@ def _build_mosecom_series(
         )
         for code, metric_key in MOSECOM_DUST_CODE_TO_METRIC.items()
     ]
+
+
+def _set_pdk_values(
+    db: Session,
+    series: list[DustStateMetricSeriesOut] | list[DustStateRawMetricSeriesOut],
+) -> None:
+    pollutant_codes = [DUST_POLLUTANT_BY_METRIC[item.key] for item in series]
+    pdk_by_code = dict(
+        db.execute(
+            select(PollutantLimit.pollutant_code, PollutantLimit.pdk_max_once).where(
+                PollutantLimit.pollutant_code.in_(pollutant_codes)
+            )
+        ).all()
+    )
+    for item in series:
+        item.pdk = pdk_by_code.get(DUST_POLLUTANT_BY_METRIC[item.key])

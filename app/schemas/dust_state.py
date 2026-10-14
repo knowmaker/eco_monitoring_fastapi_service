@@ -18,11 +18,13 @@ class DustStateRawPoint(BaseModel):
 
 class DustStateMetricSeriesOut(BaseModel):
     key: str
+    pdk: float | None = None
     points: list[DustStateHourPoint] | list[DustStateDayPoint]
 
 
 class DustStateRawMetricSeriesOut(BaseModel):
     key: str
+    pdk: float | None = None
     points: list[DustStateRawPoint]
 
 
