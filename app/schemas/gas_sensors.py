@@ -18,11 +18,13 @@ class GasSensorsRawPoint(BaseModel):
 
 class GasSensorsSubstanceSeriesOut(BaseModel):
     substance_code: str
+    pdk: float | None = None
     points: list[GasSensorsHourPoint] | list[GasSensorsDayPoint]
 
 
 class GasSensorsRawSubstanceSeriesOut(BaseModel):
     substance_code: str
+    pdk: float | None = None
     points: list[GasSensorsRawPoint]
 
 

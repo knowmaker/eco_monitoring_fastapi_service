@@ -14,6 +14,7 @@ from app.models.cagg_gas_hourly import CaggGasHourly
 from app.models.gas_sensors import GasSensors
 from app.models.monitoring_posts import MonitoringPost
 from app.models.mosecom_hourly_reading import MosecomHourlyReading
+from app.models.pollutant_limit import PollutantLimit
 from app.schemas.gas_sensors import (
     GasSensorsDayPoint,
     GasSensorsHourPoint,
@@ -47,6 +48,7 @@ def get_hourly_gas_sensors(
     substance_codes = MOSECOM_GAS_CODES if model is MosecomHourlyReading else None
     values = hourly_substance_values(db, model, monitoring_post_id, day, substance_codes)
     substances = build_substance_series(values, GasSensorsHourPoint, GasSensorsSubstanceSeriesOut, "hour", range(24))
+    _set_pdk_values(db, substances)
     return GasSensorsHourlyResponse(date=day.isoformat(), substances=substances)
 
 
@@ -75,6 +77,7 @@ def get_monthly_gas_sensors(
         "day",
         range(1, period.days_count + 1),
     )
+    _set_pdk_values(db, substances)
     return GasSensorsMonthlyResponse(month=period.key, substances=substances)
 
 
@@ -89,6 +92,7 @@ def get_raw_gas_sensors(
     start, end = parse_datetime_range_query(start_value, end_value)
     rows = raw_substance_rows(db, GasSensors, monitoring_post_id, to_epoch_ms(start), to_epoch_ms(end))
     substances = build_raw_substance_series(rows, GasSensorsRawPoint, GasSensorsRawSubstanceSeriesOut)
+    _set_pdk_values(db, substances)
     return GasSensorsRawResponse(start=start.isoformat(), end=end.isoformat(), substances=substances)
 
 
@@ -100,3 +104,21 @@ def _is_mosecom_post(db: Session, monitoring_post_id: int) -> bool:
     return db.scalar(
         select(MonitoringPost.source).where(MonitoringPost.id == monitoring_post_id)
     ) == "mosecom"
+
+
+def _set_pdk_values(
+    db: Session,
+    substances: list[GasSensorsSubstanceSeriesOut] | list[GasSensorsRawSubstanceSeriesOut],
+) -> None:
+    if not substances:
+        return
+
+    pdk_by_code = dict(
+        db.execute(
+            select(PollutantLimit.pollutant_code, PollutantLimit.pdk_max_once).where(
+                PollutantLimit.pollutant_code.in_([item.substance_code for item in substances])
+            )
+        ).all()
+    )
+    for item in substances:
+        item.pdk = pdk_by_code.get(item.substance_code)
