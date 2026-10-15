@@ -4,6 +4,7 @@ from sqlalchemy import Integer, and_, cast, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.gas_concentration_grid import GasConcentrationGrid
+from app.models.pollutant_limit import PollutantLimit
 from app.schemas.gas_heatmap import (
     GasHeatmapCellOut,
     GasHeatmapResponse,
@@ -92,9 +93,15 @@ def get_heatmap_frame(
         row.cluster_id: row.source_station_count
         for row in rows
     }
+    pdk_max_once = db.scalar(
+        select(PollutantLimit.pdk_max_once).where(
+            PollutantLimit.pollutant_code == substance_code.upper()
+        )
+    )
 
     return GasHeatmapResponse(
         substance_code=substance_code,
+        pdk_max_once=pdk_max_once,
         hour_start=selected_hour,
         hour_end=selected_hour + timedelta(hours=1),
         data_kind=data_kind,

@@ -22,6 +22,7 @@ class GasHeatmapCellOut(BaseModel):
 
 class GasHeatmapResponse(BaseModel):
     substance_code: str
+    pdk_max_once: float | None = None
     hour_start: datetime
     hour_end: datetime
     data_kind: HeatmapDataKind
