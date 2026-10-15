@@ -1,92 +1,58 @@
-from sqlalchemy import func, or_, select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.mosecom import MOSECOM_DUST_CODES, MOSECOM_GAS_CODES
 from app.core.values import to_float
-from app.models.cagg_dust_hourly import CaggDustHourly
-from app.models.cagg_gas_hourly import CaggGasHourly
-from app.models.cagg_ivtm_hourly import CaggIvtmHourly
-from app.models.cagg_meteo_hourly import CaggMeteoHourly
-from app.models.cagg_profile_inversion_hourly import CaggProfileInversionHourly
-from app.models.cagg_profile_levels_hourly import CaggProfileLevelsHourly
+from app.models.device_state import DeviceState
+from app.models.dust_state import DustState
+from app.models.gas_sensors import GasSensors
+from app.models.ivtm_state import IvtmState
+from app.models.meteo_state import MeteoState
 from app.models.monitoring_posts import MonitoringPost
 from app.models.mosecom_hourly_reading import MosecomHourlyReading
+from app.models.plc_state import PlcState
 from app.models.pollutant_limit import PollutantLimit
+from app.models.profile_level import ProfileLevel
+from app.models.profile_state import ProfileState
 from app.schemas.station_readings import (
-    LatestDustHourlyOut,
-    LatestGasHourlyOut,
+    LatestDustOut,
+    LatestGasOut,
     LatestGasSubstanceOut,
-    LatestIvtmHourlyOut,
-    LatestMeteoHourlyOut,
-    LatestProfileHourlyOut,
+    LatestIvtmOut,
+    LatestMeteoOut,
     LatestProfileLevelOut,
+    LatestProfileOut,
     PollutantLimitOut,
-    StationLatestHourlyResponse,
+    StationLatestResponse,
 )
 
 
-def get_latest_hourly_readings(db: Session, monitoring_post_id: int) -> StationLatestHourlyResponse:
+def get_latest_readings(db: Session, monitoring_post_id: int) -> StationLatestResponse:
     limits_by_code = _pollutant_limits_by_code(db)
     post = db.get(MonitoringPost, monitoring_post_id)
     if post is not None and post.source == "mosecom":
         return _latest_mosecom_readings(db, monitoring_post_id, limits_by_code)
 
-    buckets = {
-        "gas": _latest_bucket(db, CaggGasHourly, monitoring_post_id, CaggGasHourly.value_avg),
-        "dust": _latest_bucket(
-            db,
-            CaggDustHourly,
-            monitoring_post_id,
-            CaggDustHourly.pm1_avg,
-            CaggDustHourly.pm2_avg,
-            CaggDustHourly.pm10_avg,
-            CaggDustHourly.tsp_avg,
-        ),
-        "meteo": _latest_bucket(
-            db,
-            CaggMeteoHourly,
-            monitoring_post_id,
-            CaggMeteoHourly.atm_press_avg,
-            CaggMeteoHourly.air_temp_avg,
-            CaggMeteoHourly.air_hum_avg,
-            CaggMeteoHourly.hor_win_dir_avg,
-            CaggMeteoHourly.hor_win_spd_avg,
-        ),
-        "ivtm": _latest_bucket(
-            db,
-            CaggIvtmHourly,
-            monitoring_post_id,
-            CaggIvtmHourly.sensor_ivtm_hum_avg,
-            CaggIvtmHourly.sensor_ivtm_temp_avg,
-        ),
-        "profile": _latest_bucket(
-            db,
-            CaggProfileLevelsHourly,
-            monitoring_post_id,
-            CaggProfileLevelsHourly.temperature_avg,
-        ),
-    }
-    latest_bucket_ms = max((bucket for bucket in buckets.values() if bucket is not None), default=None)
+    gas = _latest_raw_gas(db, monitoring_post_id, limits_by_code)
+    dust = _latest_raw_dust(db, monitoring_post_id, limits_by_code)
+    meteo = _latest_raw_meteo(db, monitoring_post_id)
+    ivtm = _latest_raw_ivtm(db, monitoring_post_id)
+    profile = _latest_raw_profile(db, monitoring_post_id)
+    timestamps = [
+        item.timestamp_ms
+        for item in (gas, dust, meteo, ivtm, profile)
+        if item is not None
+    ]
 
-    if latest_bucket_ms is None:
-        return StationLatestHourlyResponse(
-            monitoring_post_id=monitoring_post_id,
-            bucket_ms=None,
-            gas=None,
-            dust=None,
-            meteo=None,
-            ivtm=None,
-            profile=None,
-        )
-
-    return StationLatestHourlyResponse(
+    return StationLatestResponse(
         monitoring_post_id=monitoring_post_id,
-        bucket_ms=latest_bucket_ms,
-        gas=_latest_gas(db, monitoring_post_id, buckets["gas"], limits_by_code),
-        dust=_latest_dust(db, monitoring_post_id, buckets["dust"], limits_by_code),
-        meteo=_latest_meteo(db, monitoring_post_id, buckets["meteo"]),
-        ivtm=_latest_ivtm(db, monitoring_post_id, buckets["ivtm"]),
-        profile=_latest_profile(db, monitoring_post_id, buckets["profile"]),
+        timestamp_ms=max(timestamps, default=None),
+        time_mode="exact",
+        gas=gas,
+        dust=dust,
+        meteo=meteo,
+        ivtm=ivtm,
+        profile=profile,
     )
 
 
@@ -94,37 +60,27 @@ def _latest_mosecom_readings(
     db: Session,
     monitoring_post_id: int,
     limits_by_code: dict[str, PollutantLimit],
-) -> StationLatestHourlyResponse:
-    gas_bucket_ms = _latest_mosecom_bucket(db, monitoring_post_id, MOSECOM_GAS_CODES)
-    dust_bucket_ms = _latest_mosecom_bucket(db, monitoring_post_id, MOSECOM_DUST_CODES)
-    latest_bucket_ms = max(
-        (bucket for bucket in (gas_bucket_ms, dust_bucket_ms) if bucket is not None),
+) -> StationLatestResponse:
+    gas_timestamp_ms = _latest_mosecom_timestamp(db, monitoring_post_id, MOSECOM_GAS_CODES)
+    dust_timestamp_ms = _latest_mosecom_timestamp(db, monitoring_post_id, MOSECOM_DUST_CODES)
+    timestamp_ms = max(
+        (timestamp for timestamp in (gas_timestamp_ms, dust_timestamp_ms) if timestamp is not None),
         default=None,
     )
-    if latest_bucket_ms is None:
-        return StationLatestHourlyResponse(
-            monitoring_post_id=monitoring_post_id,
-            bucket_ms=None,
-            gas=None,
-            dust=None,
-            meteo=None,
-            ivtm=None,
-            profile=None,
-        )
 
     gas = None
-    if gas_bucket_ms is not None:
+    if gas_timestamp_ms is not None:
         gas_rows = db.scalars(
             select(MosecomHourlyReading)
             .where(
                 MosecomHourlyReading.monitoring_post_id == monitoring_post_id,
-                MosecomHourlyReading.bucket_ms == gas_bucket_ms,
+                MosecomHourlyReading.bucket_ms == gas_timestamp_ms,
                 MosecomHourlyReading.substance_code.in_(MOSECOM_GAS_CODES),
             )
             .order_by(MosecomHourlyReading.substance_code.asc())
         ).all()
-        gas = LatestGasHourlyOut(
-            bucket_ms=gas_bucket_ms,
+        gas = LatestGasOut(
+            timestamp_ms=gas_timestamp_ms,
             substances=[
                 LatestGasSubstanceOut(
                     substance_code=row.substance_code,
@@ -136,19 +92,19 @@ def _latest_mosecom_readings(
         )
 
     dust = None
-    if dust_bucket_ms is not None:
+    if dust_timestamp_ms is not None:
         dust_rows = {
             row.substance_code: row
             for row in db.scalars(
                 select(MosecomHourlyReading).where(
                     MosecomHourlyReading.monitoring_post_id == monitoring_post_id,
-                    MosecomHourlyReading.bucket_ms == dust_bucket_ms,
+                    MosecomHourlyReading.bucket_ms == dust_timestamp_ms,
                     MosecomHourlyReading.substance_code.in_(MOSECOM_DUST_CODES),
                 )
             ).all()
         }
-        dust = LatestDustHourlyOut(
-            bucket_ms=dust_bucket_ms,
+        dust = LatestDustOut(
+            timestamp_ms=dust_timestamp_ms,
             pm1=None,
             pm2=to_float(dust_rows["PM2.5"].value_avg) if "PM2.5" in dust_rows else None,
             pm10=to_float(dust_rows["PM10"].value_avg) if "PM10" in dust_rows else None,
@@ -159,9 +115,10 @@ def _latest_mosecom_readings(
             },
         )
 
-    return StationLatestHourlyResponse(
+    return StationLatestResponse(
         monitoring_post_id=monitoring_post_id,
-        bucket_ms=latest_bucket_ms,
+        timestamp_ms=timestamp_ms,
+        time_mode="hourly",
         gas=gas,
         dust=dust,
         meteo=None,
@@ -170,16 +127,187 @@ def _latest_mosecom_readings(
     )
 
 
-def _latest_mosecom_bucket(
+def _latest_mosecom_timestamp(
     db: Session,
     monitoring_post_id: int,
     substance_codes: tuple[str, ...],
 ) -> int | None:
     return db.scalar(
-        select(func.max(MosecomHourlyReading.bucket_ms)).where(
+        select(MosecomHourlyReading.bucket_ms)
+        .where(
             MosecomHourlyReading.monitoring_post_id == monitoring_post_id,
             MosecomHourlyReading.substance_code.in_(substance_codes),
         )
+        .order_by(MosecomHourlyReading.bucket_ms.desc())
+        .limit(1)
+    )
+
+
+def _latest_measurement_key(
+    db: Session,
+    model: type,
+    monitoring_post_id: int,
+    *value_columns: object,
+    required_columns: tuple[object, ...] = (),
+) -> tuple[int, int] | None:
+    conditions = [PlcState.monitoring_post_id == monitoring_post_id]
+    if value_columns:
+        conditions.append(or_(*(column.is_not(None) for column in value_columns)))
+    conditions.extend(column.is_not(None) for column in required_columns)
+
+    row = db.execute(
+        select(model.device_state_id, model.device_timestamp_ms)
+        .join(DeviceState, DeviceState.id == model.device_state_id)
+        .join(PlcState, PlcState.id == DeviceState.plc_state_id)
+        .where(*conditions)
+        .order_by(model.device_timestamp_ms.desc(), model.device_state_id.desc())
+        .limit(1)
+    ).first()
+    return (int(row.device_state_id), int(row.device_timestamp_ms)) if row else None
+
+
+def _latest_raw_gas(
+    db: Session,
+    monitoring_post_id: int,
+    limits_by_code: dict[str, PollutantLimit],
+) -> LatestGasOut | None:
+    key = _latest_measurement_key(
+        db,
+        GasSensors,
+        monitoring_post_id,
+        GasSensors.value,
+        required_columns=(GasSensors.substance_code,),
+    )
+    if key is None:
+        return None
+
+    device_state_id, timestamp_ms = key
+    rows = db.scalars(
+        select(GasSensors)
+        .where(
+            GasSensors.device_state_id == device_state_id,
+            GasSensors.device_timestamp_ms == timestamp_ms,
+            GasSensors.substance_code.is_not(None),
+            GasSensors.value.is_not(None),
+        )
+        .order_by(GasSensors.sensor_id.asc())
+    ).all()
+    return LatestGasOut(
+        timestamp_ms=timestamp_ms,
+        substances=[
+            LatestGasSubstanceOut(
+                substance_code=row.substance_code,
+                value=to_float(row.value),
+                limit=_limit_out(limits_by_code.get(row.substance_code.upper())),
+            )
+            for row in rows
+        ],
+    )
+
+
+def _latest_raw_dust(
+    db: Session,
+    monitoring_post_id: int,
+    limits_by_code: dict[str, PollutantLimit],
+) -> LatestDustOut | None:
+    key = _latest_measurement_key(
+        db,
+        DustState,
+        monitoring_post_id,
+        DustState.pm1_concentration,
+        DustState.pm2_concentration,
+        DustState.pm10_concentration,
+        DustState.tsp_concentration,
+    )
+    if key is None:
+        return None
+
+    row = db.get(DustState, key)
+    return LatestDustOut(
+        timestamp_ms=key[1],
+        pm1=to_float(row.pm1_concentration),
+        pm2=to_float(row.pm2_concentration),
+        pm10=to_float(row.pm10_concentration),
+        tsp=to_float(row.tsp_concentration),
+        limits={
+            "pm1": _limit_out(limits_by_code.get("PM1")),
+            "pm2": _limit_out(limits_by_code.get("PM2.5")),
+            "pm10": _limit_out(limits_by_code.get("PM10")),
+            "tsp": _limit_out(limits_by_code.get("TSP")),
+        },
+    )
+
+
+def _latest_raw_meteo(db: Session, monitoring_post_id: int) -> LatestMeteoOut | None:
+    key = _latest_measurement_key(
+        db,
+        MeteoState,
+        monitoring_post_id,
+        MeteoState.atm_press,
+        MeteoState.air_temp,
+        MeteoState.air_hum,
+        MeteoState.hor_win_dir,
+        MeteoState.hor_win_spd,
+    )
+    if key is None:
+        return None
+
+    row = db.get(MeteoState, key)
+    return LatestMeteoOut(
+        timestamp_ms=key[1],
+        atm_press=to_float(row.atm_press),
+        air_temp=to_float(row.air_temp),
+        air_hum=to_float(row.air_hum),
+        hor_win_dir=to_float(row.hor_win_dir),
+        hor_win_spd=to_float(row.hor_win_spd),
+    )
+
+
+def _latest_raw_ivtm(db: Session, monitoring_post_id: int) -> LatestIvtmOut | None:
+    key = _latest_measurement_key(
+        db,
+        IvtmState,
+        monitoring_post_id,
+        IvtmState.sensor_ivtm_hum,
+        IvtmState.sensor_ivtm_temp,
+    )
+    if key is None:
+        return None
+
+    row = db.get(IvtmState, key)
+    return LatestIvtmOut(
+        timestamp_ms=key[1],
+        sensor_ivtm_hum=to_float(row.sensor_ivtm_hum),
+        sensor_ivtm_temp=to_float(row.sensor_ivtm_temp),
+    )
+
+
+def _latest_raw_profile(db: Session, monitoring_post_id: int) -> LatestProfileOut | None:
+    key = _latest_measurement_key(db, ProfileLevel, monitoring_post_id, ProfileLevel.temperature)
+    if key is None:
+        return None
+
+    device_state_id, timestamp_ms = key
+    level_rows = db.scalars(
+        select(ProfileLevel)
+        .where(
+            ProfileLevel.device_state_id == device_state_id,
+            ProfileLevel.device_timestamp_ms == timestamp_ms,
+            ProfileLevel.temperature.is_not(None),
+        )
+        .order_by(ProfileLevel.height.asc())
+    ).all()
+    inversion = db.get(ProfileState, key)
+    return LatestProfileOut(
+        timestamp_ms=timestamp_ms,
+        levels=[
+            LatestProfileLevelOut(height=float(row.height), temperature=to_float(row.temperature))
+            for row in level_rows
+        ],
+        inversion_power=to_float(inversion.inversion_power) if inversion else None,
+        inversion_lower=to_float(inversion.inversion_lower) if inversion else None,
+        inversion_upper=to_float(inversion.inversion_upper) if inversion else None,
+        inversion_delta_t=to_float(inversion.inversion_delta_t) if inversion else None,
     )
 
 
@@ -198,149 +326,4 @@ def _limit_out(limit: PollutantLimit | None) -> PollutantLimitOut | None:
         pdk_annual=to_float(limit.pdk_annual),
         comparison_pdk=to_float(limit.pdk_max_once),
         comparison_kind="max_once",
-    )
-
-
-def _latest_bucket(db: Session, model: type, monitoring_post_id: int, *value_columns: object) -> int | None:
-    conditions = [model.monitoring_post_id == monitoring_post_id]
-    if value_columns:
-        conditions.append(or_(*(column.is_not(None) for column in value_columns)))
-    return db.scalar(select(func.max(model.bucket_ms)).where(*conditions))
-
-
-def _latest_gas(
-    db: Session,
-    monitoring_post_id: int,
-    bucket_ms: int | None,
-    limits_by_code: dict[str, PollutantLimit],
-) -> LatestGasHourlyOut | None:
-    if bucket_ms is None:
-        return None
-
-    rows = db.execute(
-        select(CaggGasHourly)
-        .where(
-            CaggGasHourly.monitoring_post_id == monitoring_post_id,
-            CaggGasHourly.bucket_ms == bucket_ms,
-            CaggGasHourly.value_avg.is_not(None),
-        )
-        .order_by(CaggGasHourly.substance_code.asc())
-    ).scalars().all()
-
-    if not rows:
-        return None
-
-    return LatestGasHourlyOut(
-        bucket_ms=bucket_ms,
-        substances=[
-            LatestGasSubstanceOut(
-                substance_code=row.substance_code,
-                value=to_float(row.value_avg),
-                limit=_limit_out(limits_by_code.get(row.substance_code.upper())),
-            )
-            for row in rows
-        ],
-    )
-
-
-def _latest_dust(
-    db: Session,
-    monitoring_post_id: int,
-    bucket_ms: int | None,
-    limits_by_code: dict[str, PollutantLimit],
-) -> LatestDustHourlyOut | None:
-    row = _scalar_bucket_row(db, CaggDustHourly, monitoring_post_id, bucket_ms)
-    if row is None:
-        return None
-
-    return LatestDustHourlyOut(
-        bucket_ms=bucket_ms,
-        pm1=to_float(row.pm1_avg),
-        pm2=to_float(row.pm2_avg),
-        pm10=to_float(row.pm10_avg),
-        tsp=to_float(row.tsp_avg),
-        limits={
-            "pm1": _limit_out(limits_by_code.get("PM1")),
-            "pm2": _limit_out(limits_by_code.get("PM2.5")),
-            "pm10": _limit_out(limits_by_code.get("PM10")),
-            "tsp": _limit_out(limits_by_code.get("TSP")),
-        },
-    )
-
-
-def _latest_meteo(db: Session, monitoring_post_id: int, bucket_ms: int | None) -> LatestMeteoHourlyOut | None:
-    row = _scalar_bucket_row(db, CaggMeteoHourly, monitoring_post_id, bucket_ms)
-    if row is None:
-        return None
-
-    return LatestMeteoHourlyOut(
-        bucket_ms=bucket_ms,
-        atm_press=to_float(row.atm_press_avg),
-        air_temp=to_float(row.air_temp_avg),
-        air_hum=to_float(row.air_hum_avg),
-        hor_win_dir=to_float(row.hor_win_dir_avg),
-        hor_win_spd=to_float(row.hor_win_spd_avg),
-    )
-
-
-def _latest_ivtm(db: Session, monitoring_post_id: int, bucket_ms: int | None) -> LatestIvtmHourlyOut | None:
-    row = _scalar_bucket_row(db, CaggIvtmHourly, monitoring_post_id, bucket_ms)
-    if row is None:
-        return None
-
-    return LatestIvtmHourlyOut(
-        bucket_ms=bucket_ms,
-        sensor_ivtm_hum=to_float(row.sensor_ivtm_hum_avg),
-        sensor_ivtm_temp=to_float(row.sensor_ivtm_temp_avg),
-    )
-
-
-def _latest_profile(db: Session, monitoring_post_id: int, bucket_ms: int | None) -> LatestProfileHourlyOut | None:
-    if bucket_ms is None:
-        return None
-
-    level_rows = db.execute(
-        select(CaggProfileLevelsHourly)
-        .where(
-            CaggProfileLevelsHourly.monitoring_post_id == monitoring_post_id,
-            CaggProfileLevelsHourly.bucket_ms == bucket_ms,
-            CaggProfileLevelsHourly.temperature_avg.is_not(None),
-        )
-        .order_by(CaggProfileLevelsHourly.height.asc())
-    ).scalars().all()
-
-    if not level_rows:
-        return None
-
-    inversion_row = db.scalar(
-        select(CaggProfileInversionHourly).where(
-            CaggProfileInversionHourly.monitoring_post_id == monitoring_post_id,
-            CaggProfileInversionHourly.bucket_ms == bucket_ms,
-        )
-    )
-
-    return LatestProfileHourlyOut(
-        bucket_ms=bucket_ms,
-        levels=[
-            LatestProfileLevelOut(
-                height=float(row.height),
-                temperature=to_float(row.temperature_avg),
-            )
-            for row in level_rows
-        ],
-        inversion_power=to_float(inversion_row.inversion_power_avg) if inversion_row else None,
-        inversion_lower=to_float(inversion_row.inversion_lower_avg) if inversion_row else None,
-        inversion_upper=to_float(inversion_row.inversion_upper_avg) if inversion_row else None,
-        inversion_delta_t=to_float(inversion_row.inversion_delta_t_avg) if inversion_row else None,
-    )
-
-
-def _scalar_bucket_row(db: Session, model: type, monitoring_post_id: int, bucket_ms: int | None):
-    if bucket_ms is None:
-        return None
-    return db.scalar(
-        select(model).where(
-            model.monitoring_post_id == monitoring_post_id,
-            model.bucket_ms == bucket_ms,
-        )
     )

@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -16,13 +18,13 @@ class LatestGasSubstanceOut(BaseModel):
     limit: PollutantLimitOut | None = None
 
 
-class LatestGasHourlyOut(BaseModel):
-    bucket_ms: int
+class LatestGasOut(BaseModel):
+    timestamp_ms: int
     substances: list[LatestGasSubstanceOut]
 
 
-class LatestDustHourlyOut(BaseModel):
-    bucket_ms: int
+class LatestDustOut(BaseModel):
+    timestamp_ms: int
     pm1: float | None
     pm2: float | None
     pm10: float | None
@@ -30,8 +32,8 @@ class LatestDustHourlyOut(BaseModel):
     limits: dict[str, PollutantLimitOut | None] = Field(default_factory=dict)
 
 
-class LatestMeteoHourlyOut(BaseModel):
-    bucket_ms: int
+class LatestMeteoOut(BaseModel):
+    timestamp_ms: int
     atm_press: float | None
     air_temp: float | None
     air_hum: float | None
@@ -39,8 +41,8 @@ class LatestMeteoHourlyOut(BaseModel):
     hor_win_spd: float | None
 
 
-class LatestIvtmHourlyOut(BaseModel):
-    bucket_ms: int
+class LatestIvtmOut(BaseModel):
+    timestamp_ms: int
     sensor_ivtm_hum: float | None
     sensor_ivtm_temp: float | None
 
@@ -50,8 +52,8 @@ class LatestProfileLevelOut(BaseModel):
     temperature: float | None
 
 
-class LatestProfileHourlyOut(BaseModel):
-    bucket_ms: int
+class LatestProfileOut(BaseModel):
+    timestamp_ms: int
     levels: list[LatestProfileLevelOut]
     inversion_power: float | None
     inversion_lower: float | None
@@ -59,11 +61,12 @@ class LatestProfileHourlyOut(BaseModel):
     inversion_delta_t: float | None
 
 
-class StationLatestHourlyResponse(BaseModel):
+class StationLatestResponse(BaseModel):
     monitoring_post_id: int
-    bucket_ms: int | None
-    gas: LatestGasHourlyOut | None
-    dust: LatestDustHourlyOut | None
-    meteo: LatestMeteoHourlyOut | None
-    ivtm: LatestIvtmHourlyOut | None
-    profile: LatestProfileHourlyOut | None = None
+    timestamp_ms: int | None
+    time_mode: Literal["exact", "hourly"]
+    gas: LatestGasOut | None
+    dust: LatestDustOut | None
+    meteo: LatestMeteoOut | None
+    ivtm: LatestIvtmOut | None
+    profile: LatestProfileOut | None = None
