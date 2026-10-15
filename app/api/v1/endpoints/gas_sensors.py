@@ -48,7 +48,7 @@ def get_hourly_gas_sensors(
     substance_codes = MOSECOM_GAS_CODES if model is MosecomHourlyReading else None
     values = hourly_substance_values(db, model, monitoring_post_id, day, substance_codes)
     substances = build_substance_series(values, GasSensorsHourPoint, GasSensorsSubstanceSeriesOut, "hour", range(24))
-    _set_pdk_values(db, substances)
+    _set_pdk_values(db, substances, PollutantLimit.pdk_max_once)
     return GasSensorsHourlyResponse(date=day.isoformat(), substances=substances)
 
 
@@ -77,7 +77,7 @@ def get_monthly_gas_sensors(
         "day",
         range(1, period.days_count + 1),
     )
-    _set_pdk_values(db, substances)
+    _set_pdk_values(db, substances, PollutantLimit.pdk_daily)
     return GasSensorsMonthlyResponse(month=period.key, substances=substances)
 
 
@@ -92,7 +92,7 @@ def get_raw_gas_sensors(
     start, end = parse_datetime_range_query(start_value, end_value)
     rows = raw_substance_rows(db, GasSensors, monitoring_post_id, to_epoch_ms(start), to_epoch_ms(end))
     substances = build_raw_substance_series(rows, GasSensorsRawPoint, GasSensorsRawSubstanceSeriesOut)
-    _set_pdk_values(db, substances)
+    _set_pdk_values(db, substances, PollutantLimit.pdk_max_once)
     return GasSensorsRawResponse(start=start.isoformat(), end=end.isoformat(), substances=substances)
 
 
@@ -109,13 +109,14 @@ def _is_mosecom_post(db: Session, monitoring_post_id: int) -> bool:
 def _set_pdk_values(
     db: Session,
     substances: list[GasSensorsSubstanceSeriesOut] | list[GasSensorsRawSubstanceSeriesOut],
+    pdk_column,
 ) -> None:
     if not substances:
         return
 
     pdk_by_code = dict(
         db.execute(
-            select(PollutantLimit.pollutant_code, PollutantLimit.pdk_max_once).where(
+            select(PollutantLimit.pollutant_code, pdk_column).where(
                 PollutantLimit.pollutant_code.in_([item.substance_code for item in substances])
             )
         ).all()
