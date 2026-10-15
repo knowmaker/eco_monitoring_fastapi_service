@@ -91,6 +91,7 @@ def get_hourly_dust_state(
         "hour",
         range(24),
     )
+    series = _filter_empty_series(series)
     _set_pdk_values(db, series)
     return DustStateHourlyResponse(date=day.isoformat(), series=series)
 
@@ -129,6 +130,7 @@ def get_monthly_dust_state(
         "day",
         range(1, period.days_count + 1),
     )
+    series = _filter_empty_series(series)
     _set_pdk_values(db, series)
     return DustStateMonthlyResponse(month=period.key, series=series)
 
@@ -144,6 +146,7 @@ def get_raw_dust_state(
     start, end = parse_datetime_range_query(start_value, end_value)
     rows = raw_metric_rows(db, DustState, monitoring_post_id, to_epoch_ms(start), to_epoch_ms(end), RAW_METRICS)
     series = build_raw_metric_series(rows, RAW_METRICS, DustStateRawPoint, DustStateRawMetricSeriesOut)
+    series = _filter_empty_series(series)
     _set_pdk_values(db, series)
     return DustStateRawResponse(start=start.isoformat(), end=end.isoformat(), series=series)
 
@@ -169,13 +172,23 @@ def _build_mosecom_series(
             ],
         )
         for code, metric_key in MOSECOM_DUST_CODE_TO_METRIC.items()
+        if code in values_by_substance
     ]
+
+
+def _filter_empty_series(
+    series: list[DustStateMetricSeriesOut] | list[DustStateRawMetricSeriesOut],
+) -> list[DustStateMetricSeriesOut] | list[DustStateRawMetricSeriesOut]:
+    return [item for item in series if any(point.value is not None for point in item.points)]
 
 
 def _set_pdk_values(
     db: Session,
     series: list[DustStateMetricSeriesOut] | list[DustStateRawMetricSeriesOut],
 ) -> None:
+    if not series:
+        return
+
     pollutant_codes = [DUST_POLLUTANT_BY_METRIC[item.key] for item in series]
     pdk_by_code = dict(
         db.execute(
