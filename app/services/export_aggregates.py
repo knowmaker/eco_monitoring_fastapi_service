@@ -123,7 +123,10 @@ def _resolve_stations(db: Session, station_ids: list[int] | None) -> list[Monito
     if station_ids is None:
         return db.scalars(
             select(MonitoringPost)
-            .where(MonitoringPost.is_confirmed.is_(True))
+            .where(
+                MonitoringPost.is_confirmed.is_(True),
+                MonitoringPost.source == "internal",
+            )
             .order_by(MonitoringPost.serial.asc())
         ).all()
 
@@ -135,6 +138,7 @@ def _resolve_stations(db: Session, station_ids: list[int] | None) -> list[Monito
         .where(
             MonitoringPost.id.in_(station_ids),
             MonitoringPost.is_confirmed.is_(True),
+            MonitoringPost.source == "internal",
         )
         .order_by(MonitoringPost.serial.asc())
     ).all()

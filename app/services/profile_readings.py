@@ -10,6 +10,8 @@ from app.models.cagg_profile_inversion_daily import CaggProfileInversionDaily
 from app.models.cagg_profile_inversion_hourly import CaggProfileInversionHourly
 from app.models.cagg_profile_levels_daily import CaggProfileLevelsDaily
 from app.models.cagg_profile_levels_hourly import CaggProfileLevelsHourly
+from app.models.monitoring_posts import MonitoringPost
+from app.models.mosecom_profile_hourly import MosecomProfileHourly
 from app.schemas.profile_state import (
     ProfileDayOut,
     ProfileHourOut,
@@ -19,7 +21,11 @@ from app.schemas.profile_state import (
 
 
 def get_hourly_profiles(db: Session, monitoring_post_id: int, day: date) -> list[ProfileHourOut]:
-    level_rows = _fetch_hourly_levels(db, monitoring_post_id, day)
+    post = db.get(MonitoringPost, monitoring_post_id)
+    if post is not None and post.source == "mosecom":
+        level_rows = _fetch_mosecom_hourly_levels(db, monitoring_post_id, day)
+    else:
+        level_rows = _fetch_hourly_levels(db, monitoring_post_id, day)
     inversion_rows = _fetch_hourly_inversions(db, monitoring_post_id, day)
     levels_by_hour = _levels_by_period(level_rows, "hour")
     inversions_by_hour = _inversions_by_period(inversion_rows, "hour")
@@ -41,7 +47,11 @@ def get_monthly_profiles(
     month: int,
     days_count: int,
 ) -> list[ProfileDayOut]:
-    level_rows = _fetch_monthly_levels(db, monitoring_post_id, year, month)
+    post = db.get(MonitoringPost, monitoring_post_id)
+    if post is not None and post.source == "mosecom":
+        level_rows = _fetch_mosecom_monthly_levels(db, monitoring_post_id, year, month)
+    else:
+        level_rows = _fetch_monthly_levels(db, monitoring_post_id, year, month)
     inversion_rows = _fetch_monthly_inversions(db, monitoring_post_id, year, month)
     levels_by_day = _levels_by_period(level_rows, "day")
     inversions_by_day = _inversions_by_period(inversion_rows, "day")
@@ -87,6 +97,25 @@ def _fetch_hourly_levels(db: Session, monitoring_post_id: int, day: date) -> lis
     ).all()
 
 
+def _fetch_mosecom_hourly_levels(db: Session, monitoring_post_id: int, day: date) -> list[Any]:
+    local_ts = func.timezone(APP_TIMEZONE, func.to_timestamp(MosecomProfileHourly.bucket_ms / 1000.0))
+    hour_expr = cast(func.extract("hour", local_ts), Integer)
+    date_expr = cast(local_ts, Date)
+
+    return db.execute(
+        select(
+            hour_expr.label("hour"),
+            MosecomProfileHourly.height.label("height"),
+            MosecomProfileHourly.temperature_avg.label("temperature"),
+        )
+        .where(
+            MosecomProfileHourly.monitoring_post_id == monitoring_post_id,
+            date_expr == day,
+        )
+        .order_by(hour_expr.asc(), MosecomProfileHourly.height.asc())
+    ).all()
+
+
 def _fetch_hourly_inversions(db: Session, monitoring_post_id: int, day: date) -> list[Any]:
     local_ts = func.timezone(APP_TIMEZONE, func.to_timestamp(CaggProfileInversionHourly.bucket_ms / 1000.0))
     hour_expr = cast(func.extract("hour", local_ts), Integer)
@@ -125,6 +154,33 @@ def _fetch_monthly_levels(db: Session, monitoring_post_id: int, year: int, month
             month_expr == month,
         )
         .order_by(day_expr.asc(), CaggProfileLevelsDaily.height.asc())
+    ).all()
+
+
+def _fetch_mosecom_monthly_levels(
+    db: Session,
+    monitoring_post_id: int,
+    year: int,
+    month: int,
+) -> list[Any]:
+    local_ts = func.timezone(APP_TIMEZONE, func.to_timestamp(MosecomProfileHourly.bucket_ms / 1000.0))
+    day_expr = cast(func.extract("day", local_ts), Integer)
+    month_expr = cast(func.extract("month", local_ts), Integer)
+    year_expr = cast(func.extract("year", local_ts), Integer)
+
+    return db.execute(
+        select(
+            day_expr.label("day"),
+            MosecomProfileHourly.height.label("height"),
+            func.avg(MosecomProfileHourly.temperature_avg).label("temperature"),
+        )
+        .where(
+            MosecomProfileHourly.monitoring_post_id == monitoring_post_id,
+            year_expr == year,
+            month_expr == month,
+        )
+        .group_by(day_expr, MosecomProfileHourly.height)
+        .order_by(day_expr.asc(), MosecomProfileHourly.height.asc())
     ).all()
 
 

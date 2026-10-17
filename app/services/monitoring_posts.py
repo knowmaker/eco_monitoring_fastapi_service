@@ -2,11 +2,12 @@ from datetime import datetime, timezone
 from math import asin, cos, radians, sin, sqrt
 
 from fastapi import HTTPException, status
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, select, union_all
 from sqlalchemy.orm import Session
 
 from app.models.monitoring_posts import MonitoringPost
 from app.models.mosecom_hourly_reading import MosecomHourlyReading
+from app.models.mosecom_profile_hourly import MosecomProfileHourly
 from app.models.plc_state import PlcState
 from app.schemas.monitoring_posts import (
     MonitoringPostAdminOut,
@@ -234,12 +235,22 @@ def _latest_raw_timestamps_subquery():
 
 
 def _latest_mosecom_timestamps_subquery():
-    return (
+    timestamps = union_all(
         select(
             MosecomHourlyReading.monitoring_post_id,
-            func.max(MosecomHourlyReading.bucket_ms).label("last_mosecom_timestamp_ms"),
+            func.max(MosecomHourlyReading.bucket_ms).label("bucket_ms"),
+        ).group_by(MosecomHourlyReading.monitoring_post_id),
+        select(
+            MosecomProfileHourly.monitoring_post_id,
+            func.max(MosecomProfileHourly.bucket_ms).label("bucket_ms"),
+        ).group_by(MosecomProfileHourly.monitoring_post_id),
+    ).subquery()
+    return (
+        select(
+            timestamps.c.monitoring_post_id,
+            func.max(timestamps.c.bucket_ms).label("last_mosecom_timestamp_ms"),
         )
-        .group_by(MosecomHourlyReading.monitoring_post_id)
+        .group_by(timestamps.c.monitoring_post_id)
         .subquery()
     )
 

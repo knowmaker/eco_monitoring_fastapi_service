@@ -5,6 +5,7 @@ from app.core.mosecom import MOSECOM_DUST_CODES, MOSECOM_GAS_CODES
 from app.models.device_state import DeviceState
 from app.models.monitoring_posts import MonitoringPost
 from app.models.mosecom_hourly_reading import MosecomHourlyReading
+from app.models.mosecom_profile_hourly import MosecomProfileHourly
 from app.models.plc_state import PlcState
 from app.schemas.device_state import DeviceStateAvailableOut, DeviceStateAvailableResponse
 
@@ -24,6 +25,13 @@ def get_available_devices(db: Session, monitoring_post_id: int) -> DeviceStateAv
             devices.append(DeviceStateAvailableOut(device_type="gas", device_name="Мосэкомониторинг"))
         if substance_codes.intersection(MOSECOM_DUST_CODES):
             devices.append(DeviceStateAvailableOut(device_type="dust", device_name="Мосэкомониторинг"))
+        has_profile = db.scalar(
+            select(MosecomProfileHourly.monitoring_post_id)
+            .where(MosecomProfileHourly.monitoring_post_id == monitoring_post_id)
+            .limit(1)
+        )
+        if has_profile is not None:
+            devices.append(DeviceStateAvailableOut(device_type="profile", device_name="Мосэкомониторинг"))
         return DeviceStateAvailableResponse(devices=devices)
 
     has_device_name = func.nullif(func.trim(DeviceState.device_name), "").is_not(None)

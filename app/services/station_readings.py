@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.core.mosecom import MOSECOM_DUST_CODES, MOSECOM_GAS_CODES
 from app.core.values import to_float
+from app.models.cagg_profile_inversion_hourly import CaggProfileInversionHourly
 from app.models.device_state import DeviceState
 from app.models.dust_state import DustState
 from app.models.gas_sensors import GasSensors
@@ -10,6 +11,7 @@ from app.models.ivtm_state import IvtmState
 from app.models.meteo_state import MeteoState
 from app.models.monitoring_posts import MonitoringPost
 from app.models.mosecom_hourly_reading import MosecomHourlyReading
+from app.models.mosecom_profile_hourly import MosecomProfileHourly
 from app.models.plc_state import PlcState
 from app.models.pollutant_limit import PollutantLimit
 from app.models.profile_level import ProfileLevel
@@ -63,8 +65,17 @@ def _latest_mosecom_readings(
 ) -> StationLatestResponse:
     gas_timestamp_ms = _latest_mosecom_timestamp(db, monitoring_post_id, MOSECOM_GAS_CODES)
     dust_timestamp_ms = _latest_mosecom_timestamp(db, monitoring_post_id, MOSECOM_DUST_CODES)
+    profile = _latest_mosecom_profile(db, monitoring_post_id)
     timestamp_ms = max(
-        (timestamp for timestamp in (gas_timestamp_ms, dust_timestamp_ms) if timestamp is not None),
+        (
+            timestamp
+            for timestamp in (
+                gas_timestamp_ms,
+                dust_timestamp_ms,
+                profile.timestamp_ms if profile is not None else None,
+            )
+            if timestamp is not None
+        ),
         default=None,
     )
 
@@ -123,7 +134,7 @@ def _latest_mosecom_readings(
         dust=dust,
         meteo=None,
         ivtm=None,
-        profile=None,
+        profile=profile,
     )
 
 
@@ -308,6 +319,41 @@ def _latest_raw_profile(db: Session, monitoring_post_id: int) -> LatestProfileOu
         inversion_lower=to_float(inversion.inversion_lower) if inversion else None,
         inversion_upper=to_float(inversion.inversion_upper) if inversion else None,
         inversion_delta_t=to_float(inversion.inversion_delta_t) if inversion else None,
+    )
+
+
+def _latest_mosecom_profile(db: Session, monitoring_post_id: int) -> LatestProfileOut | None:
+    timestamp_ms = db.scalar(
+        select(MosecomProfileHourly.bucket_ms)
+        .where(MosecomProfileHourly.monitoring_post_id == monitoring_post_id)
+        .order_by(MosecomProfileHourly.bucket_ms.desc())
+        .limit(1)
+    )
+    if timestamp_ms is None:
+        return None
+
+    rows = db.scalars(
+        select(MosecomProfileHourly)
+        .where(
+            MosecomProfileHourly.monitoring_post_id == monitoring_post_id,
+            MosecomProfileHourly.bucket_ms == timestamp_ms,
+        )
+        .order_by(MosecomProfileHourly.height.asc())
+    ).all()
+    inversion = db.get(
+        CaggProfileInversionHourly,
+        (timestamp_ms, monitoring_post_id),
+    )
+    return LatestProfileOut(
+        timestamp_ms=timestamp_ms,
+        levels=[
+            LatestProfileLevelOut(height=float(row.height), temperature=to_float(row.temperature_avg))
+            for row in rows
+        ],
+        inversion_power=to_float(inversion.inversion_power_avg) if inversion else None,
+        inversion_lower=to_float(inversion.inversion_lower_avg) if inversion else None,
+        inversion_upper=to_float(inversion.inversion_upper_avg) if inversion else None,
+        inversion_delta_t=to_float(inversion.inversion_delta_t_avg) if inversion else None,
     )
 
 
