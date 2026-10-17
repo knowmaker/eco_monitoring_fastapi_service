@@ -12,6 +12,7 @@ from app.api.v1.endpoints.monitoring_posts import router as monitoring_posts_rou
 from app.api.v1.endpoints.profile_state import router as profile_state_router
 from app.api.v1.endpoints.raw_mqtt_payload import router as raw_mqtt_payload_router
 from app.api.v1.endpoints.station_readings import router as station_readings_router
+from app.api.v1.endpoints.temperature_map import router as temperature_map_router
 
 
 api_router = APIRouter()
@@ -25,5 +26,6 @@ api_router.include_router(export_aggregates_router)
 api_router.include_router(meteo_state_router)
 api_router.include_router(ivtm_state_router)
 api_router.include_router(profile_state_router)
+api_router.include_router(temperature_map_router)
 api_router.include_router(station_readings_router)
 api_router.include_router(raw_mqtt_payload_router)
