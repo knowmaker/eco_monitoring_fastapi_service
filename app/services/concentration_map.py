@@ -5,11 +5,11 @@ from sqlalchemy.orm import Session
 
 from app.models.gas_concentration_grid import GasConcentrationGrid
 from app.models.pollutant_limit import PollutantLimit
-from app.schemas.gas_heatmap import (
-    GasHeatmapCellOut,
-    GasHeatmapResponse,
-    GasHeatmapTimelineItemOut,
-    GasHeatmapTimelineResponse,
+from app.schemas.concentration_map import (
+    ConcentrationMapCellOut,
+    ConcentrationMapResponse,
+    ConcentrationMapTimelineItemOut,
+    ConcentrationMapTimelineResponse,
 )
 
 
@@ -20,12 +20,12 @@ def _utc_hour(value: datetime | None = None) -> datetime:
     return instant.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
 
 
-def get_heatmap_timeline(
+def get_concentration_map_timeline(
     db: Session,
     substance_code: str,
     past_hours: int,
     future_hours: int,
-) -> GasHeatmapTimelineResponse:
+) -> ConcentrationMapTimelineResponse:
     current_hour = _utc_hour()
     start = current_hour - timedelta(hours=past_hours)
     end = current_hour + timedelta(hours=future_hours + 1)
@@ -53,11 +53,11 @@ def get_heatmap_timeline(
         .group_by(GasConcentrationGrid.hour_start, GasConcentrationGrid.data_kind)
         .order_by(GasConcentrationGrid.hour_start)
     ).all()
-    return GasHeatmapTimelineResponse(
+    return ConcentrationMapTimelineResponse(
         substance_code=substance_code,
         current_hour=current_hour,
         items=[
-            GasHeatmapTimelineItemOut(
+            ConcentrationMapTimelineItemOut(
                 hour_start=row.hour_start,
                 data_kind=row.data_kind,
                 available_cells=row.available_cells,
@@ -67,11 +67,11 @@ def get_heatmap_timeline(
     )
 
 
-def get_heatmap_frame(
+def get_concentration_map_frame(
     db: Session,
     substance_code: str,
     hour_start: datetime,
-) -> GasHeatmapResponse:
+) -> ConcentrationMapResponse:
     selected_hour = _utc_hour(hour_start)
     data_kind = "forecast" if selected_hour >= _utc_hour() else "observed"
     rows = db.execute(
@@ -99,7 +99,7 @@ def get_heatmap_frame(
         )
     )
 
-    return GasHeatmapResponse(
+    return ConcentrationMapResponse(
         substance_code=substance_code,
         pdk_max_once=pdk_max_once,
         hour_start=selected_hour,
@@ -110,7 +110,7 @@ def get_heatmap_frame(
         wind_speed=rows[0].wind_speed if rows else None,
         wind_direction=rows[0].wind_direction if rows else None,
         cells=[
-            GasHeatmapCellOut(
+            ConcentrationMapCellOut(
                 latitude=row.latitude,
                 longitude=row.longitude,
                 south=row.south,
