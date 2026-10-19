@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
 from app.concentration_frame import load_frame, value_at
@@ -26,16 +26,12 @@ def _utc_hour(value: datetime | None = None) -> datetime:
     return instant.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
 
 
-def _data_kind(hour_start: datetime) -> str:
-    return "forecast" if hour_start >= _utc_hour() else "analysis"
-
-
 def _source_station_ids(
     db: Session,
     frame: GasConcentrationFrame,
 ) -> list[int]:
     source_analysis_generated = None
-    if frame.data_kind == "forecast" and frame.hour_start == _utc_hour():
+    if frame.data_kind == "forecast":
         source_analysis_generated = db.scalar(
             select(GasConcentrationFrame.generated_at).where(
                 GasConcentrationFrame.substance_code == frame.substance_code,
@@ -86,11 +82,14 @@ def _select_frame(
     hour_start: datetime,
 ) -> GasConcentrationFrame | None:
     return db.scalar(
-        select(GasConcentrationFrame).where(
+        select(GasConcentrationFrame)
+        .where(
             GasConcentrationFrame.substance_code == substance_code,
             GasConcentrationFrame.hour_start == hour_start,
-            GasConcentrationFrame.data_kind == _data_kind(hour_start),
+            GasConcentrationFrame.data_kind.in_(("analysis", "forecast")),
         )
+        .order_by(GasConcentrationFrame.data_kind)
+        .limit(1)
     )
 
 
@@ -109,19 +108,13 @@ def get_concentration_map_timeline(
             GasConcentrationFrame.substance_code == substance_code,
             GasConcentrationFrame.hour_start >= start,
             GasConcentrationFrame.hour_start < end,
-            or_(
-                and_(
-                    GasConcentrationFrame.hour_start < current_hour,
-                    GasConcentrationFrame.data_kind == "analysis",
-                ),
-                and_(
-                    GasConcentrationFrame.hour_start >= current_hour,
-                    GasConcentrationFrame.data_kind == "forecast",
-                ),
-            ),
+            GasConcentrationFrame.data_kind.in_(("analysis", "forecast")),
         )
-        .order_by(GasConcentrationFrame.hour_start)
+        .order_by(GasConcentrationFrame.hour_start, GasConcentrationFrame.data_kind)
     ).all()
+    frames_by_hour = {}
+    for row in rows:
+        frames_by_hour.setdefault(row.hour_start, row)
     return ConcentrationMapTimelineResponse(
         substance_code=substance_code,
         current_hour=current_hour,
@@ -131,7 +124,7 @@ def get_concentration_map_timeline(
                 data_kind=row.data_kind,
                 cell_count=row.cell_count,
             )
-            for row in rows
+            for row in frames_by_hour.values()
         ],
     )
 
