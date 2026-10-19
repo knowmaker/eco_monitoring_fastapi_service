@@ -5,6 +5,7 @@ from functools import lru_cache
 from hashlib import sha256
 from io import BytesIO
 from math import atan, cos, degrees, log, pi, radians, sinh, tan
+from threading import Lock
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -12,6 +13,7 @@ from sqlalchemy import select
 
 from app.db.session import SessionLocal
 from app.models.gas_concentration_frame import GasConcentrationFrame
+from app.models.pollutant_limit import PollutantLimit
 
 
 TILE_SIZE = 256
@@ -36,25 +38,42 @@ class ConcentrationFrameData:
     confidence: np.ndarray
 
 
+@dataclass(frozen=True)
+class _StoredConcentrationFrame:
+    data: ConcentrationFrameData
+    maximum_value: float
+
+
+_frame_load_lock = Lock()
+
+
 @lru_cache(maxsize=16)
-def load_frame(frame_id: int, content_sha256: str) -> ConcentrationFrameData:
+def _load_stored_frame(
+    frame_id: int,
+    content_sha256: str,
+) -> _StoredConcentrationFrame:
     with SessionLocal() as db:
-        content = db.scalar(
-            select(GasConcentrationFrame.payload).where(
+        row = db.execute(
+            select(GasConcentrationFrame.payload, PollutantLimit.pdk_max_once)
+            .outerjoin(
+                PollutantLimit,
+                PollutantLimit.pollutant_code == GasConcentrationFrame.substance_code,
+            )
+            .where(
                 GasConcentrationFrame.id == frame_id,
                 GasConcentrationFrame.content_sha256 == content_sha256,
             )
-        )
-    if content is None:
+        ).one_or_none()
+    if row is None:
         raise ValueError("Concentration frame not found")
-    content = bytes(content)
+    content = bytes(row.payload)
     if sha256(content).hexdigest() != content_sha256:
         raise ValueError("Concentration frame checksum does not match metadata")
     with np.load(BytesIO(content), allow_pickle=False) as archive:
         version = int(archive["format_version"])
         if version != 1:
             raise ValueError(f"Unsupported concentration frame format: {version}")
-        return ConcentrationFrameData(
+        data = ConcentrationFrameData(
             south=archive["south"].astype(float),
             west=archive["west"].astype(float),
             north=archive["north"].astype(float),
@@ -62,6 +81,21 @@ def load_frame(frame_id: int, content_sha256: str) -> ConcentrationFrameData:
             value=archive["value"].astype(float),
             confidence=archive["confidence"].astype(float),
         )
+    maximum_value = (
+        float(row.pdk_max_once)
+        if row.pdk_max_once is not None and row.pdk_max_once > 0
+        else 1.0
+    )
+    return _StoredConcentrationFrame(data=data, maximum_value=maximum_value)
+
+
+def _stored_frame(frame_id: int, content_sha256: str) -> _StoredConcentrationFrame:
+    with _frame_load_lock:
+        return _load_stored_frame(frame_id, content_sha256)
+
+
+def load_frame(frame_id: int, content_sha256: str) -> ConcentrationFrameData:
+    return _stored_frame(frame_id, content_sha256).data
 
 
 def _interpolate(stops: tuple, value: float):
@@ -140,14 +174,14 @@ def render_stored_tile(
     zoom: int,
     tile_x: int,
     tile_y: int,
-    maximum_value: float,
 ) -> bytes:
+    stored = _stored_frame(frame_id, content_sha256)
     return render_tile(
-        load_frame(frame_id, content_sha256),
+        stored.data,
         zoom,
         tile_x,
         tile_y,
-        maximum_value,
+        stored.maximum_value,
     )
 
 

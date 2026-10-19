@@ -1,13 +1,10 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.concentration_frame import render_stored_tile
 from app.db.session import get_db
-from app.models.gas_concentration_frame import GasConcentrationFrame
-from app.models.pollutant_limit import PollutantLimit
 from app.schemas.concentration_map import (
     ConcentrationMapResponse,
     ConcentrationMapTimelineResponse,
@@ -60,33 +57,21 @@ def concentration_map_tile(
     zoom: int,
     tile_x: int,
     tile_y: int,
-    db: Session = Depends(get_db),
 ) -> Response:
     tile_limit = 2**zoom if 0 <= zoom <= 22 else 0
     if tile_x < 0 or tile_y < 0 or tile_x >= tile_limit or tile_y >= tile_limit:
         raise HTTPException(status_code=404, detail="Tile not found")
-    frame = db.scalar(
-        select(GasConcentrationFrame).where(
-            GasConcentrationFrame.id == frame_id,
-            GasConcentrationFrame.content_sha256 == content_sha256,
+    try:
+        image = render_stored_tile(
+            frame_id,
+            content_sha256,
+            zoom,
+            tile_x,
+            tile_y,
         )
-    )
-    if frame is None:
+    except ValueError:
         raise HTTPException(status_code=404, detail="Concentration frame not found")
-    pdk_max_once = db.scalar(
-        select(PollutantLimit.pdk_max_once).where(
-            PollutantLimit.pollutant_code == frame.substance_code.upper()
-        )
-    )
-    maximum_value = pdk_max_once if pdk_max_once is not None and pdk_max_once > 0 else 1.0
-    image = render_stored_tile(
-        frame.id,
-        frame.content_sha256,
-        zoom,
-        tile_x,
-        tile_y,
-        maximum_value,
-    )
+
     return Response(
         content=image,
         media_type="image/png",
