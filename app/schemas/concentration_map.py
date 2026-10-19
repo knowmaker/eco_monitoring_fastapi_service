@@ -7,17 +7,11 @@ from pydantic import BaseModel, Field
 ConcentrationMapDataKind = Literal["observed", "forecast", "unavailable"]
 
 
-class ConcentrationMapCellOut(BaseModel):
-    latitude: float
-    longitude: float
+class ConcentrationMapBoundsOut(BaseModel):
     south: float
     west: float
     north: float
     east: float
-    value: float
-    confidence: float
-    lower_bound: float | None = None
-    upper_bound: float | None = None
 
 
 class ConcentrationMapResponse(BaseModel):
@@ -30,13 +24,27 @@ class ConcentrationMapResponse(BaseModel):
     source_station_count: int = 0
     wind_speed: float | None = None
     wind_direction: float | None = None
-    cells: list[ConcentrationMapCellOut] = Field(default_factory=list)
+    cell_count: int = 0
+    cell_size_meters: int | None = None
+    value_min: float | None = None
+    value_max: float | None = None
+    bounds: ConcentrationMapBoundsOut | None = None
+    tile_url: str | None = None
+
+
+class ConcentrationMapValueResponse(BaseModel):
+    substance_code: str
+    hour_start: datetime
+    data_kind: Literal["observed", "forecast"]
+    latitude: float
+    longitude: float
+    value: float | None = None
 
 
 class ConcentrationMapTimelineItemOut(BaseModel):
     hour_start: datetime
     data_kind: Literal["observed", "forecast"]
-    available_cells: int
+    cell_count: int
 
 
 class ConcentrationMapTimelineResponse(BaseModel):
