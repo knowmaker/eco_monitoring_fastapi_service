@@ -32,39 +32,52 @@ def _data_kind(hour_start: datetime) -> str:
 
 def _source_station_ids(
     db: Session,
-    substance_code: str,
-    hour_start: datetime,
-    data_kind: str,
+    frame: GasConcentrationFrame,
 ) -> list[int]:
-    if data_kind == "analysis":
+    source_analysis_generated = None
+    if frame.data_kind == "forecast" and frame.hour_start == _utc_hour():
+        source_analysis_generated = db.scalar(
+            select(GasConcentrationFrame.generated_at).where(
+                GasConcentrationFrame.substance_code == frame.substance_code,
+                GasConcentrationFrame.hour_start == frame.hour_start - timedelta(hours=1),
+                GasConcentrationFrame.data_kind == "analysis",
+            )
+        )
+    is_nowcast = (
+        source_analysis_generated is not None
+        and frame.generated_at >= source_analysis_generated
+    )
+    if frame.data_kind == "analysis" or is_nowcast:
         station_id_column = GasHourlyFeature.monitoring_post_id
         statement = select(station_id_column).where(
-            GasHourlyFeature.substance_code == substance_code,
-            GasHourlyFeature.bucket_start == hour_start,
+            GasHourlyFeature.substance_code == frame.substance_code,
+            GasHourlyFeature.bucket_start == (
+                frame.hour_start if frame.data_kind == "analysis"
+                else frame.hour_start - timedelta(hours=1)
+            ),
             GasHourlyFeature.filtered_hourly_mean.is_not(None),
         )
-    else:
-        station_id_column = GasPrediction.monitoring_post_id
-        statement = (
-            select(station_id_column)
-            .join(
-                GasHourlyFeature,
-                and_(
-                    GasHourlyFeature.monitoring_post_id == GasPrediction.monitoring_post_id,
-                    GasHourlyFeature.substance_code == GasPrediction.substance_code,
-                    GasHourlyFeature.bucket_start
-                    == GasPrediction.data_cutoff - timedelta(hours=1),
-                ),
-            )
-            .where(
-                GasPrediction.substance_code == substance_code,
-                GasPrediction.target_start == hour_start,
-                GasPrediction.status == "ready",
-                GasPrediction.predicted_value.is_not(None),
-                GasHourlyFeature.filtered_hourly_mean.is_not(None),
-            )
+        return list(db.scalars(statement.order_by(station_id_column)).all())
+    return list(db.scalars(
+        select(GasPrediction.monitoring_post_id)
+        .join(
+            GasHourlyFeature,
+            and_(
+                GasHourlyFeature.monitoring_post_id == GasPrediction.monitoring_post_id,
+                GasHourlyFeature.substance_code == GasPrediction.substance_code,
+                GasHourlyFeature.bucket_start
+                == GasPrediction.data_cutoff - timedelta(hours=1),
+            ),
         )
-    return list(db.scalars(statement.order_by(station_id_column)).all())
+        .where(
+            GasPrediction.substance_code == frame.substance_code,
+            GasPrediction.target_start == frame.hour_start,
+            GasPrediction.status == "ready",
+            GasPrediction.predicted_value.is_not(None),
+            GasHourlyFeature.filtered_hourly_mean.is_not(None),
+        )
+        .order_by(GasPrediction.monitoring_post_id)
+    ).all())
 
 
 def _select_frame(
@@ -144,12 +157,7 @@ def get_concentration_map_frame(
             data_kind="unavailable",
         )
 
-    monitoring_post_ids = _source_station_ids(
-        db,
-        substance_code,
-        selected_hour,
-        frame.data_kind,
-    )
+    monitoring_post_ids = _source_station_ids(db, frame)
 
     tile_url = (
         f"{settings.API_V1_PREFIX}/concentration-map/tiles/"
