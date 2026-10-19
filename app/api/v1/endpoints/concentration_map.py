@@ -7,17 +7,26 @@ from app.concentration_frame import render_stored_tile
 from app.db.session import get_db
 from app.schemas.concentration_map import (
     ConcentrationMapResponse,
+    ConcentrationMapSubstancesResponse,
     ConcentrationMapTimelineResponse,
     ConcentrationMapValueResponse,
 )
 from app.services.concentration_map import (
     get_concentration_map_frame,
+    get_concentration_map_substances,
     get_concentration_map_timeline,
     get_concentration_map_value,
 )
 
 
 router = APIRouter(prefix="/concentration-map", tags=["concentration-map"])
+
+
+@router.get("/substances", response_model=ConcentrationMapSubstancesResponse)
+def concentration_map_substances(
+    db: Session = Depends(get_db),
+) -> ConcentrationMapSubstancesResponse:
+    return get_concentration_map_substances(db)
 
 
 @router.get("/timeline", response_model=ConcentrationMapTimelineResponse)

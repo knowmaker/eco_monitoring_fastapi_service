@@ -6,10 +6,13 @@ from sqlalchemy.orm import Session
 from app.concentration_frame import load_frame, value_at
 from app.core.config import settings
 from app.models.gas_concentration_frame import GasConcentrationFrame
+from app.models.gas_hourly_feature import GasHourlyFeature
+from app.models.gas_prediction import GasPrediction
 from app.models.pollutant_limit import PollutantLimit
 from app.schemas.concentration_map import (
     ConcentrationMapBoundsOut,
     ConcentrationMapResponse,
+    ConcentrationMapSubstancesResponse,
     ConcentrationMapTimelineItemOut,
     ConcentrationMapTimelineResponse,
     ConcentrationMapValueResponse,
@@ -24,7 +27,44 @@ def _utc_hour(value: datetime | None = None) -> datetime:
 
 
 def _data_kind(hour_start: datetime) -> str:
-    return "forecast" if hour_start >= _utc_hour() else "observed"
+    return "forecast" if hour_start >= _utc_hour() else "analysis"
+
+
+def _source_station_ids(
+    db: Session,
+    substance_code: str,
+    hour_start: datetime,
+    data_kind: str,
+) -> list[int]:
+    if data_kind == "analysis":
+        station_id_column = GasHourlyFeature.monitoring_post_id
+        statement = select(station_id_column).where(
+            GasHourlyFeature.substance_code == substance_code,
+            GasHourlyFeature.bucket_start == hour_start,
+            GasHourlyFeature.filtered_hourly_mean.is_not(None),
+        )
+    else:
+        station_id_column = GasPrediction.monitoring_post_id
+        statement = (
+            select(station_id_column)
+            .join(
+                GasHourlyFeature,
+                and_(
+                    GasHourlyFeature.monitoring_post_id == GasPrediction.monitoring_post_id,
+                    GasHourlyFeature.substance_code == GasPrediction.substance_code,
+                    GasHourlyFeature.bucket_start
+                    == GasPrediction.data_cutoff - timedelta(hours=1),
+                ),
+            )
+            .where(
+                GasPrediction.substance_code == substance_code,
+                GasPrediction.target_start == hour_start,
+                GasPrediction.status == "ready",
+                GasPrediction.predicted_value.is_not(None),
+                GasHourlyFeature.filtered_hourly_mean.is_not(None),
+            )
+        )
+    return list(db.scalars(statement.order_by(station_id_column)).all())
 
 
 def _select_frame(
@@ -59,7 +99,7 @@ def get_concentration_map_timeline(
             or_(
                 and_(
                     GasConcentrationFrame.hour_start < current_hour,
-                    GasConcentrationFrame.data_kind == "observed",
+                    GasConcentrationFrame.data_kind == "analysis",
                 ),
                 and_(
                     GasConcentrationFrame.hour_start >= current_hour,
@@ -104,6 +144,13 @@ def get_concentration_map_frame(
             data_kind="unavailable",
         )
 
+    monitoring_post_ids = _source_station_ids(
+        db,
+        substance_code,
+        selected_hour,
+        frame.data_kind,
+    )
+
     tile_url = (
         f"{settings.API_V1_PREFIX}/concentration-map/tiles/"
         f"{frame.id}/{frame.content_sha256}/{{z}}/{{x}}/{{y}}.png"
@@ -116,6 +163,7 @@ def get_concentration_map_frame(
         data_kind=frame.data_kind,
         generated_at=frame.generated_at,
         source_station_count=frame.source_station_count,
+        monitoring_post_ids=monitoring_post_ids,
         wind_speed=frame.wind_speed,
         wind_direction=frame.wind_direction,
         cell_count=frame.cell_count,
@@ -152,3 +200,13 @@ def get_concentration_map_value(
         longitude=longitude,
         value=value_at(data, latitude, longitude),
     )
+
+
+def get_concentration_map_substances(db: Session) -> ConcentrationMapSubstancesResponse:
+    items = db.scalars(
+        select(GasConcentrationFrame.substance_code)
+        .where(GasConcentrationFrame.data_kind == "forecast")
+        .distinct()
+        .order_by(GasConcentrationFrame.substance_code)
+    ).all()
+    return ConcentrationMapSubstancesResponse(items=list(items))

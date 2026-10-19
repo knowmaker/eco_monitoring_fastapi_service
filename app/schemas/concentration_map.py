@@ -4,7 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-ConcentrationMapDataKind = Literal["observed", "forecast", "unavailable"]
+ConcentrationMapDataKind = Literal["analysis", "forecast", "unavailable"]
 
 
 class ConcentrationMapBoundsOut(BaseModel):
@@ -22,6 +22,7 @@ class ConcentrationMapResponse(BaseModel):
     data_kind: ConcentrationMapDataKind
     generated_at: datetime | None = None
     source_station_count: int = 0
+    monitoring_post_ids: list[int] = Field(default_factory=list)
     wind_speed: float | None = None
     wind_direction: float | None = None
     cell_count: int = 0
@@ -35,7 +36,7 @@ class ConcentrationMapResponse(BaseModel):
 class ConcentrationMapValueResponse(BaseModel):
     substance_code: str
     hour_start: datetime
-    data_kind: Literal["observed", "forecast"]
+    data_kind: Literal["analysis", "forecast"]
     latitude: float
     longitude: float
     value: float | None = None
@@ -43,7 +44,7 @@ class ConcentrationMapValueResponse(BaseModel):
 
 class ConcentrationMapTimelineItemOut(BaseModel):
     hour_start: datetime
-    data_kind: Literal["observed", "forecast"]
+    data_kind: Literal["analysis", "forecast"]
     cell_count: int
 
 
@@ -51,3 +52,7 @@ class ConcentrationMapTimelineResponse(BaseModel):
     substance_code: str
     current_hour: datetime
     items: list[ConcentrationMapTimelineItemOut] = Field(default_factory=list)
+
+
+class ConcentrationMapSubstancesResponse(BaseModel):
+    items: list[str] = Field(default_factory=list)
