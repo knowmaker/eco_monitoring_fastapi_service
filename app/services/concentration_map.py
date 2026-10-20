@@ -154,7 +154,7 @@ def get_concentration_map_frame(
 
     tile_url = (
         f"{settings.API_V1_PREFIX}/concentration-map/tiles/"
-        f"{frame.id}/{frame.content_sha256}/{{z}}/{{x}}/{{y}}.png"
+        f"{frame.id}/{frame.content_sha256}/{{z}}/{{x}}/{{y}}.png?style=2"
     )
     return ConcentrationMapResponse(
         substance_code=substance_code,
