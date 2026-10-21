@@ -32,7 +32,7 @@ def concentration_map_substances(
 @router.get("/timeline", response_model=ConcentrationMapTimelineResponse)
 def concentration_map_timeline(
     substance_code: str = Query(..., min_length=1, max_length=20),
-    past_hours: int = Query(168, ge=1, le=24 * 366),
+    past_hours: int = Query(24, ge=1, le=24 * 366),
     future_hours: int = Query(24, ge=1, le=168),
     db: Session = Depends(get_db),
 ) -> ConcentrationMapTimelineResponse:
