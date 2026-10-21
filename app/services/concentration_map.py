@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
-from app.concentration_frame import load_frame, value_at
+from app.services.concentration_frame import load_frame, value_at
 from app.core.config import settings
 from app.models.gas_concentration_frame import GasConcentrationFrame
 from app.models.gas_hourly_feature import GasHourlyFeature

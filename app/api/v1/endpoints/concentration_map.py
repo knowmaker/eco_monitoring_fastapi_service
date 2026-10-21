@@ -3,7 +3,6 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
-from app.concentration_frame import render_stored_tile
 from app.db.session import get_db
 from app.schemas.concentration_map import (
     ConcentrationMapResponse,
@@ -11,6 +10,7 @@ from app.schemas.concentration_map import (
     ConcentrationMapTimelineResponse,
     ConcentrationMapValueResponse,
 )
+from app.services.concentration_frame import render_stored_tile
 from app.services.concentration_map import (
     get_concentration_map_frame,
     get_concentration_map_substances,
